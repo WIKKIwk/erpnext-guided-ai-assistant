@@ -93,6 +93,47 @@
 			return this.isAdvancedMode() && this.config?.guided_cursor !== false;
 		}
 
+		normalizeRoutePath(route) {
+			const raw = String(route || "").trim();
+			if (!raw) return "";
+			const noHash = raw.split("#")[0];
+			const noQuery = noHash.split("?")[0];
+			if (!noQuery) return "";
+			if (noQuery === "/") return "/";
+			return noQuery.replace(/\/+$/, "");
+		}
+
+		applyGuideRouteOverride(route, targetLabel, menuPath) {
+			const routePath = this.normalizeRoutePath(route);
+			const overrides = {
+				"/app/doctype": {
+					target_label: "DocType",
+					menu_path: ["Build", "DocType"],
+				},
+			};
+			const override = overrides[routePath];
+			if (!override) {
+				return { target_label: targetLabel, menu_path: menuPath };
+			}
+
+			const normalize = (v) => String(v || "").trim().toLowerCase();
+			const expectedTarget = String(override.target_label || "").trim();
+			const expectedMenuPath = Array.isArray(override.menu_path)
+				? override.menu_path.map((x) => String(x || "").trim()).filter(Boolean)
+				: [];
+			const currentTarget = normalize(targetLabel);
+			const expectedTargetNorm = normalize(expectedTarget);
+			const currentMenu = new Set((Array.isArray(menuPath) ? menuPath : []).map((x) => normalize(x)));
+
+			if (currentTarget !== expectedTargetNorm || !currentMenu.has(expectedTargetNorm)) {
+				return {
+					target_label: expectedTarget,
+					menu_path: expectedMenuPath,
+				};
+			}
+			return { target_label: targetLabel, menu_path: menuPath };
+		}
+
 		normalizeGuidePayload(raw) {
 			if (!raw || typeof raw !== "object") return null;
 			if (String(raw.type || "") !== "navigation") return null;
@@ -103,11 +144,13 @@
 				.map((x) => String(x || "").trim())
 				.filter(Boolean)
 				.slice(0, 6);
+			const targetLabel = String(raw.target_label || "").trim();
+			const repaired = this.applyGuideRouteOverride(route, targetLabel, menuPath);
 			return {
 				type: "navigation",
 				route,
-				target_label: String(raw.target_label || "").trim(),
-				menu_path: menuPath,
+				target_label: repaired.target_label,
+				menu_path: repaired.menu_path,
 			};
 		}
 

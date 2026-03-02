@@ -886,14 +886,18 @@
 					const el = getClickable(node) || node;
 					const text = normalizeText(node.textContent || el.textContent || "");
 					if (!text) continue;
-					const href = String(el.getAttribute?.("href") || node.getAttribute?.("href") || "").trim();
-					const candidatePath = this.hrefToPath(href);
+					const candidatePath = this.getCandidatePath(el, node);
 					let score = 0;
 
 					if (targetPath) {
-						// strict: in search fallback, only click the exact requested route
 						if (candidatePath === targetPath) {
 							score = 160;
+						} else if (candidatePath) {
+							continue;
+						} else if (target && text === target) {
+							// Some Awesomebar rows have no href/route in DOM.
+							// In that case, only exact text is accepted.
+							score = 154;
 						} else {
 							continue;
 						}
@@ -907,6 +911,27 @@
 				}
 			}
 			return bestScore >= 150 ? best : null;
+		}
+
+		submitSearchByEnter(input) {
+			if (!input) return false;
+			try {
+				input.focus();
+				const eventInit = {
+					bubbles: true,
+					cancelable: true,
+					key: "Enter",
+					code: "Enter",
+					which: 13,
+					keyCode: 13,
+				};
+				input.dispatchEvent(new KeyboardEvent("keydown", eventInit));
+				input.dispatchEvent(new KeyboardEvent("keypress", eventInit));
+				input.dispatchEvent(new KeyboardEvent("keyup", eventInit));
+				return true;
+			} catch {
+				return false;
+			}
 		}
 
 		async trySearchFallback(step, guide) {
@@ -945,6 +970,13 @@
 					duration_ms: 320,
 					pre_click_pause_ms: 125,
 				});
+				await this.waitFor(() => this.isAtRoute(guide.route), 3200, 110);
+			}
+			if (this.isAtRoute(guide.route)) return true;
+
+			// If the row exists but click handler didn't fire, confirm with Enter.
+			const entered = this.submitSearchByEnter(input);
+			if (entered) {
 				await this.waitFor(() => this.isAtRoute(guide.route), 3200, 110);
 			}
 			return this.isAtRoute(guide.route);
@@ -1008,8 +1040,19 @@
 			push(node?.dataset?.route);
 			push(el?.dataset?.url);
 			push(node?.dataset?.url);
+			push(el?.getAttribute?.("data-value"));
+			push(node?.getAttribute?.("data-value"));
+			push(el?.dataset?.value);
+			push(node?.dataset?.value);
 
 			for (const raw of values) {
+				if (String(raw || "").includes("/app/")) {
+					const match = String(raw).match(/\/app\/[a-z0-9\-_/]+/i);
+					if (match && match[0]) {
+						const extracted = this.normalizePath(match[0]);
+						if (extracted && extracted.startsWith("/app/")) return extracted;
+					}
+				}
 				const path = this.routeLikeToPath(raw);
 				if (path && path.startsWith("/app/")) return path;
 			}

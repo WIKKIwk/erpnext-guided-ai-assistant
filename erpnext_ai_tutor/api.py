@@ -59,6 +59,50 @@ from erpnext_ai_tutor.tutor.chat_helpers import (
 )
 
 
+GUIDE_ROUTE_OVERRIDES = {
+	"/app/doctype": {
+		"target_label": "DocType",
+		"menu_path": ["Build", "DocType"],
+	}
+}
+
+
+def _normalize_route_path(route: str) -> str:
+	path = str(route or "").strip()
+	if not path:
+		return ""
+	path = path.split("#", 1)[0].split("?", 1)[0]
+	if path != "/":
+		path = path.rstrip("/")
+	return path
+
+
+def _normalize_guide_text(value: str) -> str:
+	return str(value or "").strip().casefold()
+
+
+def _apply_guide_route_override(route: str, target_label: str, menu_path: List[str]) -> tuple[str, List[str]]:
+	override = GUIDE_ROUTE_OVERRIDES.get(_normalize_route_path(route))
+	if not override:
+		return target_label, menu_path
+
+	expected_target = str(override.get("target_label") or "").strip()
+	expected_menu_path = [str(x).strip() for x in override.get("menu_path", []) if str(x or "").strip()]
+	if not expected_target or not expected_menu_path:
+		return target_label, menu_path
+
+	target_norm = _normalize_guide_text(target_label)
+	expected_norm = _normalize_guide_text(expected_target)
+	menu_norm = {_normalize_guide_text(x) for x in menu_path}
+
+	# Repair inconsistent payloads (e.g. stale wrong module like "EDI")
+	# when route is known and deterministic.
+	if target_norm != expected_norm or expected_norm not in menu_norm:
+		return expected_target, expected_menu_path
+
+	return target_label, menu_path
+
+
 @frappe.whitelist()
 def get_tutor_config() -> Dict[str, Any]:
 	"""Client bootstrap config (safe; no secrets)."""
@@ -144,11 +188,14 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 		menu_path = plan.get("menu_path")
 		if not isinstance(menu_path, list):
 			menu_path = []
+		menu_path = [str(x).strip() for x in menu_path if str(x or "").strip()]
+		target_label = str(plan.get("target_label") or "").strip()
+		target_label, menu_path = _apply_guide_route_override(route, target_label, menu_path)
 		return {
 			"type": "navigation",
 			"route": route,
-			"target_label": str(plan.get("target_label") or "").strip(),
-			"menu_path": [str(x).strip() for x in menu_path if str(x or "").strip()],
+			"target_label": target_label,
+			"menu_path": menu_path,
 		}
 
 	if advanced_mode:

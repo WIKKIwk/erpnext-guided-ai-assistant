@@ -26,6 +26,8 @@ LIST_INTENT_RE = re.compile(
 	re.IGNORECASE,
 )
 
+DOCTYPE_META_RE = re.compile(r"(?:\bdoc[\s\-]*type\b|\bdoctype\b)", re.IGNORECASE)
+
 STOPWORDS = {
 	"menga",
 	"ni",
@@ -254,6 +256,10 @@ def _extract_candidates(user_message: str) -> List[str]:
 
 def _has_list_intent(user_message: str) -> bool:
 	return bool(LIST_INTENT_RE.search(_normalize_ascii_key(user_message)))
+
+
+def _has_doctype_meta_intent(user_message: str) -> bool:
+	return bool(DOCTYPE_META_RE.search(_normalize_ascii_key(user_message)))
 
 
 def _best_doctype_match(candidates: List[str]) -> Dict[str, Any] | None:
@@ -572,6 +578,11 @@ def build_navigation_plan(user_message: str) -> Dict[str, Any]:
 	candidates = _extract_candidates(user_message)
 	if not candidates:
 		return {}
+
+	# Hard guard: "DocType list / doctype" queries must never drift to similarly named doctypes
+	# like "Code List". Resolve deterministically to Build -> DocType.
+	if _has_doctype_meta_intent(user_message):
+		return _plan_for_doctype("DocType", "Core", "Build")
 
 	raw_tokens = []
 	for token in TOKEN_RE.findall(_normalize_ascii_key(user_message)):
