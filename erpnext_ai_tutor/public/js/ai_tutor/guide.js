@@ -718,12 +718,13 @@
 							await this.sleep(90);
 							el = this.findByLabel(label);
 						}
-						if (!el) {
-							if (!step.optional) {
-								await this.sleep(260);
+							if (!el) {
+								if (!step.optional) {
+									await this.sleep(260);
+									break;
+								}
+								continue;
 							}
-							continue;
-						}
 						const clicked = await this.focusElement(el, step.message, { click: Boolean(step.click) });
 						if (clicked && step.click && guide.route) {
 							await this.waitFor(() => this.isAtRoute(guide.route), 1800, 110);
