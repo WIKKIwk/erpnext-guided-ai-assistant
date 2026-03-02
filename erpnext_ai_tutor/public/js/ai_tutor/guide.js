@@ -870,7 +870,7 @@
 
 		findSearchResult(query, route) {
 			const target = normalizeText(query);
-			const targetPath = this.routeToPath(route);
+			const targetPath = this.normalizePath(this.routeToPath(route));
 			const selectors = [
 				".awesomplete ul li",
 				".search-bar .awesomplete ul li",
@@ -886,22 +886,27 @@
 					const el = getClickable(node) || node;
 					const text = normalizeText(node.textContent || el.textContent || "");
 					if (!text) continue;
+					const href = String(el.getAttribute?.("href") || node.getAttribute?.("href") || "").trim();
+					const candidatePath = this.hrefToPath(href);
 					let score = 0;
-					if (target && text === target) score = 100;
-					else if (target && text.includes(target)) score = 84;
-					else if (target) {
-						const token = target.split(" ")[0];
-						if (token && text.includes(token)) score = 70;
+
+					if (targetPath) {
+						// strict: in search fallback, only click the exact requested route
+						if (candidatePath === targetPath) {
+							score = 160;
+						} else {
+							continue;
+						}
 					}
-					const href = String(el.getAttribute?.("href") || "").trim();
-					if (targetPath && href && href.includes(targetPath)) score = Math.max(score, 98);
+					if (target && text === target) score = Math.max(score, 180);
+					else if (target && text.includes(target)) score = Math.max(score, 168);
 					if (score > bestScore) {
 						best = el;
 						bestScore = score;
 					}
 				}
 			}
-			return bestScore >= 68 ? best : null;
+			return bestScore >= 150 ? best : null;
 		}
 
 		async trySearchFallback(step, guide) {

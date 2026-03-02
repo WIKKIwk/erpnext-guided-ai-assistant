@@ -546,6 +546,9 @@ def _plan_for_doctype(doctype_name: str, module_name: str, workspace_hint: str =
 				if ws.strip().lower() == module.strip().lower():
 					workspace = ws
 					break
+	# If only one workspace is linked to this doctype, it is the safest menu hop.
+	if not workspace and len(workspace_labels) == 1:
+		workspace = workspace_labels[0]
 
 	menu_path: List[str] = []
 	first_hop = workspace or module
