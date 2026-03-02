@@ -21,6 +21,11 @@ TRIM_PHRASES_RE = re.compile(
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+LIST_INTENT_RE = re.compile(
+	r"(?:\bro['’]?yxat(?:i|ini|ni|ga|dan)?\b|\broyxat(?:i|ini|ni|ga|dan)?\b|\blist(?:i|ni|ga|dan)?\b|\bregistry\b|\breestr\b)",
+	re.IGNORECASE,
+)
+
 STOPWORDS = {
 	"menga",
 	"ni",
@@ -245,6 +250,10 @@ def _extract_candidates(user_message: str) -> List[str]:
 			if added >= max_groups:
 				break
 	return out[:30]
+
+
+def _has_list_intent(user_message: str) -> bool:
+	return bool(LIST_INTENT_RE.search(_normalize_ascii_key(user_message)))
 
 
 def _best_doctype_match(candidates: List[str]) -> Dict[str, Any] | None:
@@ -515,6 +524,46 @@ def _workspace_labels_for_doctype(doctype_name: str) -> List[str]:
 	return labels
 
 
+def _plan_for_doctype(doctype_name: str, module_name: str, workspace_hint: str = "") -> Dict[str, Any]:
+	name = str(doctype_name or "").strip()
+	module = str(module_name or "").strip()
+	hint = str(workspace_hint or "").strip()
+	if not name:
+		return {}
+
+	workspace_labels = _workspace_labels_for_doctype(name)
+	workspace = ""
+	if hint:
+		for ws in workspace_labels:
+			if ws.strip().lower() == hint.strip().lower():
+				workspace = ws
+				break
+		if not workspace:
+			workspace = hint
+	if module:
+		if not workspace:
+			for ws in workspace_labels:
+				if ws.strip().lower() == module.strip().lower():
+					workspace = ws
+					break
+
+	menu_path: List[str] = []
+	first_hop = workspace or module
+	if first_hop:
+		menu_path.append(first_hop)
+	menu_path.append(name)
+
+	return {
+		"kind": "doctype",
+		"doctype": name,
+		"module": module,
+		"target_label": name,
+		"route": f"/app/{_route_slug(name)}",
+		"menu_path": menu_path,
+		"workspace": workspace,
+	}
+
+
 def build_navigation_plan(user_message: str) -> Dict[str, Any]:
 	"""Resolve a navigation target and return structured hints for UI guidance."""
 	candidates = _extract_candidates(user_message)
@@ -528,8 +577,23 @@ def build_navigation_plan(user_message: str) -> Dict[str, Any]:
 			continue
 		raw_tokens.append(normalized)
 	has_specific_doctype_hint = any(t in SPECIFIC_DOCTYPE_HINTS for t in raw_tokens)
+	has_list_intent = _has_list_intent(user_message)
+
+	if has_list_intent:
+		doctype_first = _best_doctype_match(candidates)
+		if doctype_first:
+			workspace_match = _best_workspace_match(candidates)
+			workspace_hint = ""
+			if workspace_match:
+				workspace_hint = str(workspace_match.get("label") or workspace_match.get("name") or "").strip()
+			return _plan_for_doctype(
+				str(doctype_first.get("name") or "").strip(),
+				str(doctype_first.get("module") or "").strip(),
+				workspace_hint,
+			)
+
 	module_name = _best_module_match(candidates)
-	if module_name and not has_specific_doctype_hint and len(raw_tokens) <= 3:
+	if module_name and not has_specific_doctype_hint and not has_list_intent and len(raw_tokens) <= 3:
 		return _plan_for_module(module_name)
 
 	workspace_match = _best_workspace_match(candidates)
@@ -549,28 +613,10 @@ def build_navigation_plan(user_message: str) -> Dict[str, Any]:
 
 	doctype = _best_doctype_match(candidates)
 	if doctype:
-		name = str(doctype.get("name") or "").strip()
-		module = str(doctype.get("module") or "").strip()
-		workspace_labels = _workspace_labels_for_doctype(name)
-		workspace = ""
-		if module:
-			for ws in workspace_labels:
-				if ws.strip().lower() == module.strip().lower():
-					workspace = ws
-					break
-		menu_path: List[str] = []
-		if module:
-			menu_path.append(module)
-		menu_path.append(name)
-		return {
-			"kind": "doctype",
-			"doctype": name,
-			"module": module,
-			"target_label": name,
-			"route": f"/app/{_route_slug(name)}",
-			"menu_path": menu_path,
-			"workspace": workspace,
-		}
+		return _plan_for_doctype(
+			str(doctype.get("name") or "").strip(),
+			str(doctype.get("module") or "").strip(),
+		)
 
 	if module_name:
 		return _plan_for_module(module_name)

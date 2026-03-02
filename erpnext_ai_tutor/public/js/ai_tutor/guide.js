@@ -897,10 +897,10 @@
 			const input = this.findSearchInput();
 			if (!input || !query) return false;
 			const openMessage =
-				String(step?.message || "").trim() || "2-qadam: qidiruv fallbackni ishga tushiramiz.";
+				String(step?.message || "").trim() || "Qidiruv orqali topamiz.";
 
 			await this.focusElement(input, openMessage, {
-				click: false,
+				click: true,
 				duration_ms: 320,
 			});
 			if (!this.running) return false;
@@ -913,27 +913,11 @@
 				input.value = query;
 				input.dispatchEvent(new Event("input", { bubbles: true }));
 				input.dispatchEvent(new Event("change", { bubbles: true }));
-				const keydown = new KeyboardEvent("keydown", {
-					key: "Enter",
-					code: "Enter",
-					keyCode: 13,
-					which: 13,
-					bubbles: true,
-				});
-				const keyup = new KeyboardEvent("keyup", {
-					key: "Enter",
-					code: "Enter",
-					keyCode: 13,
-					which: 13,
-					bubbles: true,
-				});
-				input.dispatchEvent(keydown);
-				input.dispatchEvent(keyup);
 			} catch {
 				return false;
 			}
 
-			await this.sleep(520);
+			await this.sleep(540);
 			if (this.isAtRoute(guide.route)) return true;
 
 			const result = this.findSearchResult(query, guide.route);
@@ -1209,6 +1193,10 @@
 						const el = match?.el || null;
 						if (!el) {
 							if (!step.optional) {
+								const openedBySearch = await this.trySearchFallback(step, guide);
+								if (openedBySearch) {
+									continue;
+								}
 								result = {
 									ok: false,
 									message: this.buildFailureMessage(step, guide, "not_found"),
@@ -1232,6 +1220,10 @@
 							const opened = await this.waitFor(() => this.isAtRoute(step.route), 2200, 110);
 							const isLast = i === steps.length - 1;
 							if (!opened && isLast) {
+								const openedBySearch = await this.trySearchFallback(step, guide);
+								if (openedBySearch) {
+									continue;
+								}
 								result = {
 									ok: false,
 									message: this.buildFailureMessage(step, guide, "not_opened"),
@@ -1244,6 +1236,13 @@
 					if (step.type === "navigate") {
 						const opened = await this.navigate(step.route);
 						if (!opened) {
+							const openedBySearch = await this.trySearchFallback(
+								{ label: String(guide?.target_label || "").trim(), message: "Qidiruv fallbackni ishga tushiramiz." },
+								guide
+							);
+							if (openedBySearch) {
+								continue;
+							}
 							result = {
 								ok: false,
 								message: `Men "${step.route}" uchun bosiladigan tugmani topa olmadim. Layout yoki ruxsatni tekshiring.`,
