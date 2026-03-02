@@ -25,7 +25,7 @@ WHERE_AM_I_RE = re.compile(
 )
 
 NAVIGATION_QUERY_RE = re.compile(
-	r"(?:\b(?:qayerda|qaysi\s+(?:bo['’]lim|bo‘lim|qism)da|qayerdan\s+top|qanday\s+(?:kirsam|ochsam)|where\s+is|how\s+to\s+open)\b)",
+	r"(?:\b(?:qayerda|qaysi\s+(?:bo['’]lim|bo‘lim|qism)da|qayerdan\s+top|qanday\s+(?:kirsam|ochsam)|where\s+is|how\s+to\s+open|ko['’]rsat(?:ib)?(?:\s+yubor)?|ko‘rsat(?:ib)?(?:\s+yubor)?|korsat(?:ib)?(?:\s+yubor)?|ochib\s+ber|olib\s+bor|navigate)\b)",
 	re.IGNORECASE,
 )
 

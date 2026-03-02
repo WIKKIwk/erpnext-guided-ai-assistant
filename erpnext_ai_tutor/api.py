@@ -132,6 +132,23 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 	nav_query = bool(advanced_mode and is_navigation_lookup(user_message))
 	nav_hint = ""
 	nav_plan: Dict[str, Any] = {}
+
+	def _guide_from_nav_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+		if not isinstance(plan, dict):
+			return {}
+		route = str(plan.get("route") or "").strip()
+		if not route:
+			return {}
+		menu_path = plan.get("menu_path")
+		if not isinstance(menu_path, list):
+			menu_path = []
+		return {
+			"type": "navigation",
+			"route": route,
+			"target_label": str(plan.get("target_label") or "").strip(),
+			"menu_path": [str(x).strip() for x in menu_path if str(x or "").strip()],
+		}
+
 	if nav_query:
 		nav_plan = build_navigation_plan(user_message)
 		nav_hint = build_navigation_reply_from_plan(nav_plan, lang=lang, strict=True)
@@ -295,9 +312,25 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 	try:
 		reply = call_llm(messages=messages, max_tokens=max_tokens)
 	except Exception as exc:
+		fallback_key = _llm_fallback_reply_key(exc)
+		if advanced_mode and nav_query and nav_plan:
+			guide = _guide_from_nav_plan(nav_plan)
+			if guide:
+				deterministic_nav_reply = nav_hint or build_navigation_reply_from_plan(nav_plan, lang=lang, strict=False)
+				if deterministic_nav_reply:
+					limit_note = {
+						"uz": "AI servisi hozir limitga tushgan bo'lsa ham, yo'lni lokal xaritadan ko'rsatdim.",
+						"ru": "Даже при текущем лимите AI я показал путь по локальной карте ERP.",
+						"en": "Even with the current AI limit, I showed the path using local ERP metadata.",
+					}.get(lang, "AI limit reached; navigation path is provided from local ERP metadata.")
+					return {
+						"ok": True,
+						"reply": (deterministic_nav_reply.rstrip() + "\n\n" + limit_note).strip(),
+						"guide": guide,
+					}
 		return {
 			"ok": True,
-			"reply": reply_text(_llm_fallback_reply_key(exc), lang=lang, emoji_style=emoji_style),
+			"reply": reply_text(fallback_key, lang=lang, emoji_style=emoji_style),
 		}
 
 	if advanced_mode and isinstance(ctx, dict):
@@ -326,16 +359,6 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 
 	guide: Dict[str, Any] = {}
 	if advanced_mode and nav_query and nav_plan:
-		route = str(nav_plan.get("route") or "").strip()
-		if route:
-			menu_path = nav_plan.get("menu_path")
-			if not isinstance(menu_path, list):
-				menu_path = []
-			guide = {
-				"type": "navigation",
-				"route": route,
-				"target_label": str(nav_plan.get("target_label") or "").strip(),
-				"menu_path": [str(x).strip() for x in menu_path if str(x or "").strip()],
-			}
+		guide = _guide_from_nav_plan(nav_plan)
 
 	return {"ok": True, "reply": reply or "", "guide": guide}
