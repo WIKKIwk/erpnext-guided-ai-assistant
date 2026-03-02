@@ -471,11 +471,14 @@
 	top: 16px;
 	pointer-events: none;
 	transform-origin: 13px 8px;
+	transform: translateZ(0) scale(1);
+	will-change: left, top, transform, filter;
 	background: url("/assets/erpnext_ai_tutor/images/handpointing.svg") center center / contain no-repeat;
 	filter: drop-shadow(0 6px 14px rgba(2, 6, 23, 0.38));
 	transition:
 		left 520ms cubic-bezier(0.2, 0.8, 0.2, 1),
 		top 520ms cubic-bezier(0.2, 0.8, 0.2, 1),
+		transform 130ms cubic-bezier(0.22, 1, 0.36, 1),
 		filter 220ms ease;
 }
 
@@ -497,6 +500,14 @@
 .erpnext-ai-tutor-guide-cursor.is-pulse {
 	animation: erpnextAiTutorGuidePulse 320ms cubic-bezier(0.22, 1, 0.36, 1);
 	filter: drop-shadow(0 9px 18px rgba(37, 99, 235, 0.34));
+}
+
+.erpnext-ai-tutor-guide-cursor.is-press {
+	transform: translateZ(0) scale(0.66);
+}
+
+.erpnext-ai-tutor-guide-cursor.is-release {
+	transform: translateZ(0) scale(1.1);
 }
 
 .erpnext-ai-tutor-guide-cursor.is-pulse::after {
@@ -686,13 +697,8 @@
 	.erpnext-ai-tutor-history-item,
 	.erpnext-ai-tutor-input,
 	.erpnext-ai-tutor-send,
-	.erpnext-ai-tutor-guide-btn,
-	.erpnext-ai-tutor-guide-cursor {
+	.erpnext-ai-tutor-guide-btn {
 		animation: none !important;
 		transition: none !important;
-	}
-
-	.erpnext-ai-tutor-guide-cursor::after {
-		animation: none !important;
 	}
 }

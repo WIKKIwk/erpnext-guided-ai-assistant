@@ -154,6 +154,10 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 	if advanced_mode:
 		nav_plan = build_navigation_plan(user_message)
 		nav_query = bool(should_offer_navigation_guide(user_message, nav_plan_exists=bool(nav_plan)))
+		# If local ERP metadata already resolved a concrete destination,
+		# always attach guide to keep UX consistent.
+		if nav_plan and not nav_query:
+			nav_query = True
 	if nav_query:
 		nav_hint = build_navigation_reply_from_plan(nav_plan, lang=lang, strict=True)
 

@@ -32,6 +32,7 @@
 			this.running = false;
 			this.$layer = null;
 			this.$cursor = null;
+			this._pulseTimers = [];
 		}
 
 		normalizeGuide(raw) {
@@ -66,11 +67,20 @@
 
 		stop() {
 			this.running = false;
+			this.clearPulseTimers();
 			if (this.$layer && this.$layer.parentNode) {
 				this.$layer.parentNode.removeChild(this.$layer);
 			}
 			this.$layer = null;
 			this.$cursor = null;
+		}
+
+		clearPulseTimers() {
+			if (!Array.isArray(this._pulseTimers) || !this._pulseTimers.length) return;
+			for (const timer of this._pulseTimers) {
+				window.clearTimeout(timer);
+			}
+			this._pulseTimers = [];
 		}
 
 		sleep(ms) {
@@ -160,34 +170,56 @@
 		buildSteps(guide) {
 			const steps = [];
 			const menuPath = Array.isArray(guide.menu_path) ? guide.menu_path : [];
-				if (menuPath[0]) {
+			const moduleLabel = String(menuPath[0] || "").trim();
+			const targetLabel = String(guide.target_label || menuPath[menuPath.length - 1] || moduleLabel || "").trim();
+
+			if (targetLabel) {
+				steps.push({
+					type: "focus",
+					label: targetLabel,
+					message: `1-qadam: agar ko'rinib turgan bo'lsa, \"${targetLabel}\" ni to'g'ridan-to'g'ri bosamiz.`,
+					click: true,
+					optional: true,
+					timeout_ms: 900,
+					skip_if_on_route: true,
+				});
+			}
+
+			const moduleNorm = normalizeText(moduleLabel);
+			const targetNorm = normalizeText(targetLabel);
+			if (moduleLabel && moduleNorm && targetNorm && moduleNorm !== targetNorm) {
+				steps.push({
+					type: "focus",
+					label: moduleLabel,
+					message: `2-qadam: bo'lim ko'rinmasa, avval \"${moduleLabel}\" ni ochamiz.`,
+					click: true,
+					optional: true,
+					timeout_ms: 900,
+					skip_if_on_route: true,
+				});
+				if (targetLabel) {
 					steps.push({
 						type: "focus",
-						label: menuPath[0],
-						message: `1-qadam: chap menyudan \"${menuPath[0]}\" ni toping.`,
-						click: false,
+						label: targetLabel,
+						message: `3-qadam: endi \"${targetLabel}\" bo'limini bosamiz.`,
+						click: true,
 						optional: true,
+						timeout_ms: 1400,
+						skip_if_on_route: true,
 					});
 				}
-				if (menuPath[1]) {
-					steps.push({
-						type: "focus",
-						label: menuPath[1],
-						message: `2-qadam: \"${menuPath[1]}\" bo'limini oching.`,
-						click: false,
-						optional: true,
-					});
-				}
+			}
+
 			if (guide.route) {
 				steps.push({
 					type: "navigate",
 					route: guide.route,
-					message: `3-qadam: kerakli sahifani ochamiz: ${guide.route}`,
+					message: `4-qadam: kerakli sahifani ochamiz: ${guide.route}`,
 				});
 			}
 			steps.push({
 				type: "confirm",
-				label: guide.target_label || menuPath[menuPath.length - 1] || "",
+				label: targetLabel,
 				message: "Tayyor: mana shu kerakli sahifa.",
 			});
 			return steps;
@@ -218,9 +250,21 @@
 
 		clickPulse() {
 			if (!this.$cursor) return;
-			this.$cursor.classList.remove("is-pulse");
-			void this.$cursor.offsetWidth;
-			this.$cursor.classList.add("is-pulse");
+			this.clearPulseTimers();
+			const cursor = this.$cursor;
+			cursor.classList.remove("is-pulse", "is-press", "is-release");
+			void cursor.offsetWidth;
+			cursor.classList.add("is-pulse", "is-press");
+			const t1 = window.setTimeout(() => {
+				if (!this.$cursor || this.$cursor !== cursor) return;
+				cursor.classList.remove("is-press");
+				cursor.classList.add("is-release");
+			}, 120);
+			const t2 = window.setTimeout(() => {
+				if (!this.$cursor || this.$cursor !== cursor) return;
+				cursor.classList.remove("is-release");
+			}, 280);
+			this._pulseTimers.push(t1, t2);
 		}
 
 		async focusElement(el, message, opts = { click: false }) {
@@ -237,12 +281,13 @@
 			await this.sleep(640);
 			if (opts.click) {
 				this.clickPulse();
+				await this.sleep(120);
 				try {
 					if (typeof el.click === "function") el.click();
 				} catch {
 					// ignore
 				}
-				await this.sleep(360);
+				await this.sleep(300);
 			}
 			return true;
 		}
@@ -254,6 +299,13 @@
 			const noHash = hashIndex >= 0 ? cleaned.slice(0, hashIndex) : cleaned;
 			const queryIndex = noHash.indexOf("?");
 			return queryIndex >= 0 ? noHash.slice(0, queryIndex) : noHash;
+		}
+
+		isAtRoute(route) {
+			const targetPath = this.routeToPath(route);
+			if (!targetPath) return false;
+			const current = String(window.location.pathname || "");
+			return current === targetPath || current.startsWith(targetPath + "/");
 		}
 
 		routeToParts(route) {
@@ -268,7 +320,7 @@
 		async navigate(route) {
 			if (!route || !this.running) return;
 			const targetPath = this.routeToPath(route);
-			if (targetPath && window.location.pathname === targetPath) return;
+			if (this.isAtRoute(route)) return;
 
 			const searchInput = this.findSearchInput();
 			if (searchInput) {
@@ -283,10 +335,7 @@
 				return;
 			}
 
-			await this.waitFor(() => {
-				const current = String(window.location.pathname || "");
-				return current === targetPath || current.startsWith(targetPath + "/");
-			}, 8000, 120);
+			await this.waitFor(() => this.isAtRoute(route), 8000, 120);
 			await this.sleep(480);
 		}
 
@@ -325,7 +374,13 @@
 				for (const step of steps) {
 					if (!this.running) break;
 					if (step.type === "focus") {
-						const el = await this.waitFor(() => this.findByLabel(step.label), 2600, 120);
+						if (step.skip_if_on_route && this.isAtRoute(guide.route)) {
+							continue;
+						}
+						const label = String(step.label || "").trim();
+						if (!label) continue;
+						const timeoutMs = Number(step.timeout_ms) > 0 ? Number(step.timeout_ms) : step.optional ? 900 : 2600;
+						const el = await this.waitFor(() => this.findByLabel(label), timeoutMs, 100);
 						if (!el) {
 							if (!step.optional) {
 								await this.sleep(260);
