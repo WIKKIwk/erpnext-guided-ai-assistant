@@ -126,6 +126,48 @@
 		return raw.replace("_", "-").split("-", 1)[0].toLowerCase();
 	}
 
+	function toSlug(value) {
+		return String(value || "")
+			.trim()
+			.toLowerCase()
+			.replace(/[_\s]+/g, "-")
+			.replace(/[^a-z0-9-]/g, "")
+			.replace(/-+/g, "-")
+			.replace(/^-|-$/g, "");
+	}
+
+	function getLocationRouteInfo() {
+		const pathname = String(window.location.pathname || "");
+		const search = String(window.location.search || "");
+		const hash = String(window.location.hash || "");
+		const appPrefix = "/app";
+		const appPath = pathname.startsWith(appPrefix) ? pathname.slice(appPrefix.length) : "";
+		const parts = appPath
+			.split("/")
+			.map((p) => {
+				try {
+					return decodeURIComponent(String(p || "").trim());
+				} catch {
+					return String(p || "").trim();
+				}
+			})
+			.filter(Boolean);
+		const route_str = parts.join("/");
+		return {
+			pathname,
+			search,
+			hash,
+			route: parts,
+			route_str,
+			route_key: `${pathname}${search}${hash}`,
+			is_desk: pathname.startsWith("/app"),
+		};
+	}
+
+	function getCanonicalRouteKey() {
+		return getLocationRouteInfo().route_key;
+	}
+
 	function safeTranslate(text) {
 		const source = String(text || "").trim();
 		if (!source) return "";
@@ -239,6 +281,8 @@
 	function getFormContext(includeDocValues) {
 		const frm = window.cur_frm;
 		if (!frm || !frm.doctype) return null;
+		const loc = getLocationRouteInfo();
+		if (!loc.is_desk) return null;
 		const route = typeof frappe.get_route === "function" ? frappe.get_route() : [];
 		const routeHead = String(route?.[0] || "").toLowerCase();
 		if (routeHead !== "form") return null;
@@ -248,6 +292,9 @@
 		const frmDocname = String(frm.docname || "").trim();
 		if (routeDoctype && frmDoctype && routeDoctype !== frmDoctype) return null;
 		if (routeDocname && frmDocname && routeDocname !== frmDocname) return null;
+		const routeDoctypeSlug = toSlug(routeDoctype || frmDoctype);
+		const locFirstSlug = toSlug(loc.route?.[0] || "");
+		if (routeDoctypeSlug && locFirstSlug && routeDoctypeSlug !== locFirstSlug) return null;
 
 		const ctx = {
 			doctype: frm.doctype,
@@ -285,14 +332,33 @@
 	function getContextSnapshot(config, lastEvent) {
 		const includeDocValues = Boolean(config?.include_doc_values);
 		const page_heading = getPageHeading();
+		const loc = getLocationRouteInfo();
+		let route = typeof frappe.get_route === "function" ? frappe.get_route() : [];
+		let route_str = typeof frappe.get_route_str === "function" ? frappe.get_route_str() : "";
+		const locRouteStr = String(loc.route_str || "");
+		const currentPath = String(loc.pathname || "");
+
+		const routeHead = String(route?.[0] || "").toLowerCase();
+		const routeDoctypeSlug = toSlug(route?.[1] || "");
+		const locFirstSlug = toSlug(loc.route?.[0] || "");
+		const looksStaleFormRoute =
+			routeHead === "form" && Boolean(currentPath.startsWith("/app")) && Boolean(locFirstSlug) && Boolean(routeDoctypeSlug) && routeDoctypeSlug !== locFirstSlug;
+		if (looksStaleFormRoute) {
+			route = Array.isArray(loc.route) ? loc.route : [];
+			route_str = locRouteStr;
+		}
+		if (!String(route_str || "").trim() && locRouteStr) {
+			route_str = locRouteStr;
+		}
+
 		const snapshot = {
-			route: typeof frappe.get_route === "function" ? frappe.get_route() : [],
-			route_str: typeof frappe.get_route_str === "function" ? frappe.get_route_str() : "",
+			route,
+			route_str: route_str || "",
 			page_title: document.title || "",
 			page_heading: page_heading || "",
-			hash: window.location.hash || "",
-			pathname: window.location.pathname || "",
-			search: window.location.search || "",
+			hash: loc.hash || "",
+			pathname: loc.pathname || "",
+			search: loc.search || "",
 			url: window.location.href,
 			user: frappe.session && frappe.session.user,
 			event: lastEvent || null,
@@ -339,6 +405,8 @@
 		getCommonUiLabels,
 		getPageActionUi,
 		getUiSnapshot,
+		getLocationRouteInfo,
+		getCanonicalRouteKey,
 		getFormContext,
 		getContextSnapshot,
 		getStorageKey,

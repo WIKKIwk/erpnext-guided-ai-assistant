@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import frappe
 from frappe.model.document import Document
@@ -17,6 +17,9 @@ class TutorConfig:
 	include_form_context: bool
 	include_doc_values: bool
 	max_context_kb: int
+	ai_provider: str
+	ai_model: str
+	max_completion_tokens: int
 	language: str
 	emoji_style: str
 	system_prompt: str
@@ -78,6 +81,29 @@ def normalize_emoji_style(value: Any) -> str:
 	return "soft"
 
 
+def normalize_ai_provider(value: Any) -> str:
+	raw = str(value or "").strip().lower()
+	if raw in {"openai", "gemini"}:
+		return raw
+	return "openai"
+
+
+def default_ai_model(provider: str) -> str:
+	if normalize_ai_provider(provider) == "gemini":
+		return "gemini-3-flash-preview"
+	return "gpt-5-mini"
+
+
+def resolve_ai_model(doc: Any, provider: str) -> str:
+	custom = str(getattr(doc, "custom_ai_model", "") or "").strip()
+	if custom:
+		return custom
+	chosen = str(getattr(doc, "ai_model", "") or "").strip()
+	if chosen:
+		return chosen
+	return default_ai_model(provider)
+
+
 class AITutorSettings(Document):
 	def validate(self) -> None:
 		if not hasattr(self, "advanced_mode") or getattr(self, "advanced_mode", None) in {None, ""}:
@@ -88,6 +114,24 @@ class AITutorSettings(Document):
 			self.max_context_kb = 4
 		if self.max_context_kb > 256:
 			self.max_context_kb = 256
+
+		self.ai_provider = normalize_ai_provider(getattr(self, "ai_provider", "openai"))
+		self.ai_model = resolve_ai_model(self, self.ai_provider)
+		self.max_completion_tokens = _coerce_int(getattr(self, "max_completion_tokens", None), 0)
+		if self.max_completion_tokens < 0:
+			self.max_completion_tokens = 0
+		if self.max_completion_tokens > 131072:
+			self.max_completion_tokens = 131072
+
+		# Persist API key immediately into encrypted store when user enters plaintext.
+		# This prevents losing the key if another field validation fails later.
+		raw_api_key = str(getattr(self, "api_key", "") or "").strip()
+		if raw_api_key and not self.is_dummy_password(raw_api_key):
+			from frappe.utils.password import set_encrypted_password
+
+			target_name = str(getattr(self, "name", "") or self.doctype)
+			set_encrypted_password(self.doctype, target_name, raw_api_key, "api_key")
+			self.api_key = "*" * len(raw_api_key)
 
 		if not getattr(self, "language", None):
 			self.language = "uz"
@@ -102,6 +146,13 @@ class AITutorSettings(Document):
 		if not hasattr(doc, "advanced_mode") or getattr(doc, "advanced_mode", None) in {None, ""}:
 			doc.advanced_mode = 1
 		doc.max_context_kb = _coerce_int(getattr(doc, "max_context_kb", None), 24)
+		doc.ai_provider = normalize_ai_provider(getattr(doc, "ai_provider", "openai"))
+		doc.ai_model = resolve_ai_model(doc, doc.ai_provider)
+		doc.max_completion_tokens = _coerce_int(getattr(doc, "max_completion_tokens", None), 0)
+		if doc.max_completion_tokens < 0:
+			doc.max_completion_tokens = 0
+		if doc.max_completion_tokens > 131072:
+			doc.max_completion_tokens = 131072
 		if not getattr(doc, "language", None):
 			doc.language = "uz"
 		doc.emoji_style = normalize_emoji_style(getattr(doc, "emoji_style", "soft"))
@@ -120,6 +171,9 @@ class AITutorSettings(Document):
 			include_form_context=_coerce_bool(getattr(doc, "include_form_context", 1)),
 			include_doc_values=_coerce_bool(getattr(doc, "include_doc_values", 1)),
 			max_context_kb=_coerce_int(getattr(doc, "max_context_kb", None), 24),
+			ai_provider=normalize_ai_provider(getattr(doc, "ai_provider", "openai")),
+			ai_model=resolve_ai_model(doc, normalize_ai_provider(getattr(doc, "ai_provider", "openai"))),
+			max_completion_tokens=_coerce_int(getattr(doc, "max_completion_tokens", None), 0),
 			language=str(getattr(doc, "language", "uz") or "uz"),
 			emoji_style=normalize_emoji_style(getattr(doc, "emoji_style", "soft")),
 			system_prompt=str(getattr(doc, "system_prompt", DEFAULT_SYSTEM_PROMPT) or DEFAULT_SYSTEM_PROMPT),
@@ -137,6 +191,9 @@ class AITutorSettings(Document):
 			"include_form_context": cfg.include_form_context,
 			"include_doc_values": cfg.include_doc_values,
 			"max_context_kb": cfg.max_context_kb,
+			"ai_provider": cfg.ai_provider,
+			"ai_model": cfg.ai_model,
+			"max_completion_tokens": cfg.max_completion_tokens,
 			"language": cfg.language,
 			"emoji_style": cfg.emoji_style,
 		}

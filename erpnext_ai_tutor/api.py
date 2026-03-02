@@ -258,10 +258,11 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 		return {"ok": True, "reply": which_field_reply(ctx, lang=lang)}
 
 	if advanced_mode and isinstance(ctx, dict) and WHERE_AM_I_RE.search(user_message):
-		return {
-			"ok": True,
-			"reply": _location_llm_reply(user_message, ctx, cfg, lang=lang, fallback_lang=fallback_lang),
-		}
+		# Prefer LLM for conversational location help, but keep deterministic fallback.
+		reply = _location_llm_reply(user_message, ctx, cfg, lang=lang, fallback_lang=fallback_lang)
+		if not reply or not reply.strip():
+			reply = location_reply(ctx, lang=lang)
+		return {"ok": True, "reply": reply}
 
 	if advanced_mode and isinstance(ctx, dict) and WHAT_NEXT_RE.search(user_message):
 		return {"ok": True, "reply": next_step_reply(ctx, lang=lang)}
@@ -369,7 +370,11 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 			messages.append({"role": role, "content": content[:2000]})
 
 	messages.append({"role": "user", "content": user_message})
-	if troubleshoot:
+	if cfg.max_completion_tokens == 0:
+		max_tokens = None
+	elif cfg.max_completion_tokens > 0:
+		max_tokens = cfg.max_completion_tokens
+	elif troubleshoot:
 		max_tokens = 8192
 	elif advanced_mode:
 		max_tokens = 1024

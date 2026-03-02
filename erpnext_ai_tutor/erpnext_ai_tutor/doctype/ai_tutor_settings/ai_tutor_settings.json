@@ -53,6 +53,12 @@
   "include_form_context",
   "include_doc_values",
   "max_context_kb",
+  "provider_section",
+  "ai_provider",
+  "ai_model",
+  "custom_ai_model",
+  "api_key",
+  "max_completion_tokens",
   "language",
   "emoji_style",
   "system_prompt"
@@ -103,6 +109,46 @@
    "fieldtype": "Int",
    "label": "Max Context Size (KB)",
    "description": "Limits data sent to AI for safety and speed."
+  },
+  {
+   "fieldname": "provider_section",
+   "fieldtype": "Section Break",
+   "label": "AI Provider Settings"
+  },
+  {
+   "default": "openai",
+   "fieldname": "ai_provider",
+   "fieldtype": "Select",
+   "label": "AI Provider",
+   "options": "openai\ngemini",
+   "description": "Provider used by AI Tutor. If API key/model are empty, fallback is ERPNext AI Settings."
+  },
+  {
+   "default": "gpt-5-mini",
+   "fieldname": "ai_model",
+   "fieldtype": "Select",
+   "label": "AI Model",
+   "options": "gpt-5-mini\ngpt-5\ngpt-5-nano\ngemini-3-flash-preview\ngemini-3-flash\ngemini-3-pro",
+   "description": "Choose a common model from list."
+  },
+  {
+   "fieldname": "custom_ai_model",
+   "fieldtype": "Data",
+   "label": "Custom AI Model (Optional)",
+   "description": "If filled, this value overrides AI Model."
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "API Key",
+   "description": "Stored securely. Leave empty to use ERPNext AI Settings."
+  },
+  {
+   "default": "0",
+   "fieldname": "max_completion_tokens",
+   "fieldtype": "Int",
+   "label": "Max Completion Tokens",
+   "description": "0 = provider maximum (most flexible). Set a number to enforce your own cap."
   },
   {
    "default": "uz",

@@ -1,0 +1,58 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"ai_tutor_admin_header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>AI Tutor Admin</b></span>\",\"col\":12}},{\"id\":\"ai_tutor_admin_note\",\"type\":\"paragraph\",\"data\":{\"text\":\"Configure AI Tutor, provider, model, and token limits here. This workspace is visible only to System Manager.\",\"col\":12}},{\"id\":\"shortcut_ai_tutor_settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"AI Tutor Settings\",\"col\":3}}]",
+ "creation": "2026-03-02 12:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "setting-gear",
+ "color": "#0ea5e9",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "AI Tutor Admin",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Configuration",
+   "link_count": 1,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "AI Tutor Settings",
+   "link_count": 0,
+   "link_to": "AI Tutor Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-03-02 12:00:00.000000",
+ "module": "ERPNext AI Tutor",
+ "name": "AI Tutor Admin",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 64.0,
+ "shortcuts": [
+ {
+   "doc_view": "Form",
+   "label": "AI Tutor Settings",
+   "link_to": "AI Tutor Settings",
+   "type": "DocType"
+  }
+ ],
+ "title": "AI Tutor Admin"
+}

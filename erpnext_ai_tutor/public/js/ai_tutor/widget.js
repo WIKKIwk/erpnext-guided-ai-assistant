@@ -31,6 +31,7 @@
 		normalizeLangCode,
 		getContextSnapshot,
 		getStorageKey,
+		getCanonicalRouteKey,
 	} = u;
 
 	class TutorWidget {
@@ -167,8 +168,8 @@
 
 		getRouteKey() {
 			try {
-				const routeStr = typeof frappe?.get_route_str === "function" ? frappe.get_route_str() : "";
-				if (routeStr) return String(routeStr).trim();
+				const key = typeof getCanonicalRouteKey === "function" ? getCanonicalRouteKey() : "";
+				if (key) return String(key).trim();
 			} catch {
 				// ignore
 			}
@@ -528,7 +529,7 @@
 		async loadConfig() {
 			try {
 				const r = await frappe.call(METHOD_GET_CONFIG);
-				this.config = r?.message?.config || r?.message?.config || r?.message?.config;
+				this.config = r?.message?.config || {};
 				this.aiReady = Boolean(r?.message?.ai_ready);
 				const enabled = r?.message?.config?.enabled;
 				if (enabled === false) {
