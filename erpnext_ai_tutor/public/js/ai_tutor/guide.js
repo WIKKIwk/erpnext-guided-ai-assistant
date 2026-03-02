@@ -385,19 +385,14 @@
 			if (!this.$cursor) return;
 			this.clearPulseTimers();
 			const cursor = this.$cursor;
-			cursor.classList.remove("is-pulse", "is-press", "is-release");
+			cursor.classList.remove("is-click");
 			void cursor.offsetWidth;
-			cursor.classList.add("is-pulse", "is-press");
+			cursor.classList.add("is-click");
 			const t1 = window.setTimeout(() => {
 				if (!this.$cursor || this.$cursor !== cursor) return;
-				cursor.classList.remove("is-press");
-				cursor.classList.add("is-release");
-			}, 120);
-			const t2 = window.setTimeout(() => {
-				if (!this.$cursor || this.$cursor !== cursor) return;
-				cursor.classList.remove("is-release");
-			}, 280);
-			this._pulseTimers.push(t1, t2);
+				cursor.classList.remove("is-click");
+			}, 260);
+			this._pulseTimers.push(t1);
 		}
 
 		async focusElement(el, message, opts = { click: false }) {

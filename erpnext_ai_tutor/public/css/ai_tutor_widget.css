@@ -497,38 +497,24 @@
 	pointer-events: none;
 }
 
-.erpnext-ai-tutor-guide-cursor.is-pulse {
-	animation: erpnextAiTutorGuidePulse 320ms cubic-bezier(0.22, 1, 0.36, 1);
+.erpnext-ai-tutor-guide-cursor.is-click {
+	animation: erpnextAiTutorGuideClick 220ms cubic-bezier(0.22, 1, 0.36, 1);
 	filter: drop-shadow(0 9px 18px rgba(37, 99, 235, 0.34));
 }
 
-.erpnext-ai-tutor-guide-cursor.is-press {
-	transform: translateZ(0) scale(0.66);
+.erpnext-ai-tutor-guide-cursor.is-click::after {
+	animation: erpnextAiTutorGuideClickRing 220ms ease-out;
 }
 
-.erpnext-ai-tutor-guide-cursor.is-release {
-	transform: translateZ(0) scale(1.1);
-}
-
-.erpnext-ai-tutor-guide-cursor.is-pulse::after {
-	animation: erpnextAiTutorGuideClickRing 320ms ease-out;
-}
-
-@keyframes erpnextAiTutorGuidePulse {
+@keyframes erpnextAiTutorGuideClick {
 	0% {
-		transform: scale(1);
+		transform: translateZ(0) scale(1);
 	}
-	22% {
-		transform: scale(0.68);
-	}
-	58% {
-		transform: scale(1.06);
-	}
-	80% {
-		transform: scale(0.98);
+	42% {
+		transform: translateZ(0) scale(0.72);
 	}
 	100% {
-		transform: scale(1);
+		transform: translateZ(0) scale(1);
 	}
 }
 
