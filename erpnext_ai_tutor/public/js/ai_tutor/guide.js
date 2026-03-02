@@ -848,11 +848,24 @@
 		}
 
 		getSearchQuery(guide, step) {
-			const raw = String(step?.label || guide?.target_label || "").trim();
-			if (raw) return raw;
+			const stepLabel = String(step?.label || "").trim();
+			const targetLabel = String(guide?.target_label || "").trim();
+			const stepScope = String(step?.scope || "").trim().toLowerCase();
+			const stepNorm = normalizeText(stepLabel);
+			const targetNorm = normalizeText(targetLabel);
+
+			// If the current step is a parent/module hop (e.g. Core -> User),
+			// search directly by final target to avoid wrong "Core" lookups.
+			if (targetLabel && stepScope === "sidebar" && stepLabel && stepNorm && targetNorm && stepNorm !== targetNorm) {
+				return targetLabel;
+			}
+			if (targetLabel) return targetLabel;
+
 			const parts = this.routeToParts(guide?.route || "");
 			if (!parts.length) return "";
-			return parts[parts.length - 1].replace(/-/g, " ").trim();
+			const routeLeaf = parts[parts.length - 1].replace(/-/g, " ").trim();
+			if (routeLeaf) return routeLeaf;
+			return stepLabel;
 		}
 
 		findSearchResult(query, route) {
