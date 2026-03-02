@@ -502,16 +502,108 @@
 			return steps;
 		}
 
-		getRect(el) {
-			const rect = el.getBoundingClientRect();
+		rectFromDomRect(rect) {
+			if (!rect) return null;
+			const left = Number(rect.left);
+			const top = Number(rect.top);
+			const width = Number(rect.width);
+			const height = Number(rect.height);
+			if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) {
+				return null;
+			}
+			if (width <= 2 || height <= 2) return null;
 			return {
-				left: rect.left,
-				top: rect.top,
-				width: rect.width,
-				height: rect.height,
-				right: rect.right,
-				bottom: rect.bottom,
+				left,
+				top,
+				width,
+				height,
+				right: left + width,
+				bottom: top + height,
 			};
+		}
+
+		getPreferredLabelElement(el) {
+			if (!el) return null;
+			const selectors = [
+				".sidebar-item-label",
+				".item-anchor",
+				".desk-sidebar-item",
+				".link-item",
+				".widget a",
+				"a",
+				"button",
+			];
+			for (const sel of selectors) {
+				const node = el.matches?.(sel) ? el : el.querySelector?.(sel);
+				if (node && isVisible(node)) return node;
+			}
+			return isVisible(el) ? el : null;
+		}
+
+		getLargestTextRect(rootEl) {
+			if (!rootEl || typeof document.createTreeWalker !== "function") return null;
+			let best = null;
+			let bestArea = 0;
+			let walker = null;
+			try {
+				walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
+					acceptNode: (node) => {
+						const text = String(node?.textContent || "")
+							.replace(/\s+/g, " ")
+							.trim();
+						if (!text) return NodeFilter.FILTER_REJECT;
+						if (text.length < 2 && !/\d/.test(text)) return NodeFilter.FILTER_REJECT;
+						const parent = node.parentElement;
+						if (!parent || !isVisible(parent)) return NodeFilter.FILTER_REJECT;
+						return NodeFilter.FILTER_ACCEPT;
+					},
+				});
+			} catch {
+				return null;
+			}
+			if (!walker) return null;
+
+			let node = walker.nextNode();
+			while (node) {
+				try {
+					const range = document.createRange();
+					range.selectNodeContents(node);
+					const rects = range.getClientRects();
+					for (const r of rects) {
+						const rect = this.rectFromDomRect(r);
+						if (!rect) continue;
+						const area = rect.width * rect.height;
+						if (area > bestArea) {
+							bestArea = area;
+							best = rect;
+						}
+					}
+				} catch {
+					// ignore bad text node ranges
+				}
+				node = walker.nextNode();
+			}
+			return best;
+		}
+
+		getPreciseTargetPoint(el) {
+			const preferred = this.getPreferredLabelElement(el) || el;
+			const labelTextRect = this.getLargestTextRect(preferred);
+			const rect = labelTextRect || this.getRect(preferred);
+			if (!rect) return null;
+
+			const innerPadX = Math.min(8, Math.max(2, rect.width * 0.22));
+			const innerPadY = Math.min(6, Math.max(2, rect.height * 0.25));
+			const targetX = clamp(rect.left + rect.width * 0.52, rect.left + innerPadX, rect.right - innerPadX);
+			const targetY = clamp(rect.top + rect.height * 0.56, rect.top + innerPadY, rect.bottom - innerPadY);
+			return {
+				x: clamp(targetX, 2, window.innerWidth - 2),
+				y: clamp(targetY, 2, window.innerHeight - 2),
+			};
+		}
+
+		getRect(el) {
+			return this.rectFromDomRect(el?.getBoundingClientRect?.());
 		}
 
 		computeAdaptiveDuration(x, y, preferredDuration = 0) {
@@ -530,10 +622,19 @@
 			return clamp(Math.round(120 + Math.min(distance, 220) * 0.28), 120, 180);
 		}
 
-		moveCursorTo(rect, preferredDuration = 0) {
+		moveCursorTo(target, preferredDuration = 0) {
 			if (!this.$cursor) return;
-			const x = rect.left + rect.width * 0.5;
-			const y = rect.top + Math.min(rect.height * 0.65, 24);
+			let x = 0;
+			let y = 0;
+			if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+				x = Number(target.x);
+				y = Number(target.y);
+			} else {
+				const rect = target;
+				if (!rect) return;
+				x = rect.left + rect.width * 0.5;
+				y = rect.top + Math.min(rect.height * 0.65, 24);
+			}
 			const motion = this.computeAdaptiveDuration(x, y, preferredDuration);
 			this.$cursor.style.transitionDuration = `${motion.duration}ms`;
 			this.$cursor.style.left = `${Math.max(0, x - this.hotspotX)}px`;
@@ -557,6 +658,70 @@
 			this._pulseTimers.push(t1);
 		}
 
+		performPreciseClick(el, point = null) {
+			if (!el) return false;
+			const anchor = getClickable(el) || el;
+			const x = Number(point?.x);
+			const y = Number(point?.y);
+			let target = anchor;
+
+			if (Number.isFinite(x) && Number.isFinite(y)) {
+				const hit = document.elementFromPoint(x, y);
+				const hitClickable = getClickable(hit);
+				if (
+					hitClickable &&
+					(anchor === hitClickable || anchor.contains(hitClickable) || hitClickable.contains(anchor))
+				) {
+					target = hitClickable;
+				}
+			}
+
+			try {
+				if (Number.isFinite(x) && Number.isFinite(y)) {
+					const down = new MouseEvent("mousedown", {
+						bubbles: true,
+						cancelable: true,
+						view: window,
+						clientX: x,
+						clientY: y,
+						button: 0,
+					});
+					const up = new MouseEvent("mouseup", {
+						bubbles: true,
+						cancelable: true,
+						view: window,
+						clientX: x,
+						clientY: y,
+						button: 0,
+					});
+					const click = new MouseEvent("click", {
+						bubbles: true,
+						cancelable: true,
+						view: window,
+						clientX: x,
+						clientY: y,
+						button: 0,
+					});
+					target.dispatchEvent(down);
+					target.dispatchEvent(up);
+					target.dispatchEvent(click);
+					return true;
+				}
+			} catch {
+				// fallback below
+			}
+
+			try {
+				if (typeof target.click === "function") {
+					target.click();
+					return true;
+				}
+			} catch {
+				// ignore
+			}
+			return false;
+		}
+
 		async focusElement(el, message, opts = { click: false }) {
 			if (!el || !this.running) return false;
 			if (!opts.skip_scroll) {
@@ -568,20 +733,17 @@
 			}
 			await this.sleep(opts.skip_scroll ? 90 : 220);
 			if (!this.running || !isVisible(el)) return false;
-			const rect = this.getRect(el);
-			const motion = this.moveCursorTo(rect, Number(opts.duration_ms) || 0);
+			const targetPoint = this.getPreciseTargetPoint(el) || this.getRect(el);
+			const motion = this.moveCursorTo(targetPoint, Number(opts.duration_ms) || 0);
 			const settlePause = clamp(Math.round((motion?.duration || 300) * 0.22), 90, 220);
 			await this.sleep((motion?.duration || 300) + settlePause);
 			if (opts.click) {
 				const hoverPause = this.computeHoverPause(motion?.distance || 0, opts.pre_click_pause_ms);
 				this.clickPulse();
 				await this.sleep(hoverPause);
-				try {
-					if (typeof el.click === "function") el.click();
-				} catch {
-					// ignore
-				}
+				const clicked = this.performPreciseClick(el, targetPoint);
 				await this.sleep(220);
+				return clicked;
 			}
 			return true;
 		}
