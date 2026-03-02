@@ -35,7 +35,10 @@ from erpnext_ai_tutor.tutor.language import (
 	normalize_lang,
 	reply_text,
 )
-from erpnext_ai_tutor.tutor.navigation import build_navigation_reply
+from erpnext_ai_tutor.tutor.navigation import (
+	build_navigation_plan,
+	build_navigation_reply_from_plan,
+)
 from erpnext_ai_tutor.tutor.llm import call_llm, get_ai_provider_config
 from erpnext_ai_tutor.tutor.ui import (
 	enforce_primary_action_label,
@@ -128,8 +131,10 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 
 	nav_query = bool(advanced_mode and is_navigation_lookup(user_message))
 	nav_hint = ""
+	nav_plan: Dict[str, Any] = {}
 	if nav_query:
-		nav_hint = build_navigation_reply(user_message, lang=lang, strict=True)
+		nav_plan = build_navigation_plan(user_message)
+		nav_hint = build_navigation_reply_from_plan(nav_plan, lang=lang, strict=True)
 
 	if advanced_mode and isinstance(ctx, dict) and WHICH_FIELD_RE.search(user_message):
 		return {"ok": True, "reply": which_field_reply(ctx, lang=lang)}
@@ -319,4 +324,18 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 		except Exception:
 			pass
 
-	return {"ok": True, "reply": reply or ""}
+	guide: Dict[str, Any] = {}
+	if advanced_mode and nav_query and nav_plan:
+		route = str(nav_plan.get("route") or "").strip()
+		if route:
+			menu_path = nav_plan.get("menu_path")
+			if not isinstance(menu_path, list):
+				menu_path = []
+			guide = {
+				"type": "navigation",
+				"route": route,
+				"target_label": str(nav_plan.get("target_label") or "").strip(),
+				"menu_path": [str(x).strip() for x in menu_path if str(x or "").strip()],
+			}
+
+	return {"ok": True, "reply": reply or "", "guide": guide}

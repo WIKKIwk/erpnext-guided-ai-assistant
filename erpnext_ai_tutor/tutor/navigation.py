@@ -219,28 +219,29 @@ def _workspace_labels_for_doctype(doctype_name: str) -> List[str]:
 	return labels
 
 
-def build_navigation_reply(user_message: str, *, lang: str, strict: bool = False) -> str:
-	lang = normalize_lang(lang)
+def build_navigation_plan(user_message: str) -> Dict[str, Any]:
+	"""Resolve a navigation target and return structured hints for UI guidance."""
 	candidates = _extract_candidates(user_message)
 	if not candidates:
-		return ""
+		return {}
 
 	raw_tokens = [t for t in TOKEN_RE.findall(_normalize_ascii_key(user_message)) if t and t not in STOPWORDS]
 	has_specific_doctype_hint = any(t in SPECIFIC_DOCTYPE_HINTS for t in raw_tokens)
 	module_name = _best_module_match(candidates)
 	if module_name and not has_specific_doctype_hint and len(raw_tokens) <= 3:
-		route = f"/app/{_route_slug(module_name)}"
-		if lang == "ru":
-			return f"Topdim: **{module_name}** modul. Ochish: `{route}`."
-		if lang == "en":
-			return f"Found module: **{module_name}**. Open: `{route}`."
-		return f"Topdim: **{module_name}** moduli. Ochish: `{route}`."
+		return {
+			"kind": "module",
+			"module": module_name,
+			"target_label": module_name,
+			"route": f"/app/{_route_slug(module_name)}",
+			"menu_path": [module_name],
+			"workspace": "",
+		}
 
 	doctype = _best_doctype_match(candidates)
 	if doctype:
 		name = str(doctype.get("name") or "").strip()
 		module = str(doctype.get("module") or "").strip()
-		route = f"/app/{_route_slug(name)}"
 		workspace_labels = _workspace_labels_for_doctype(name)
 		workspace = ""
 		if module:
@@ -248,36 +249,75 @@ def build_navigation_reply(user_message: str, *, lang: str, strict: bool = False
 				if ws.strip().lower() == module.strip().lower():
 					workspace = ws
 					break
+		menu_path: List[str] = []
+		if module:
+			menu_path.append(module)
+		menu_path.append(name)
+		return {
+			"kind": "doctype",
+			"doctype": name,
+			"module": module,
+			"target_label": name,
+			"route": f"/app/{_route_slug(name)}",
+			"menu_path": menu_path,
+			"workspace": workspace,
+		}
 
+	if module_name:
+		return {
+			"kind": "module",
+			"module": module_name,
+			"target_label": module_name,
+			"route": f"/app/{_route_slug(module_name)}",
+			"menu_path": [module_name],
+			"workspace": "",
+		}
+
+	return {}
+
+
+def build_navigation_reply_from_plan(plan: Dict[str, Any], *, lang: str, strict: bool = False) -> str:
+	lang = normalize_lang(lang)
+	if not plan:
+		return ""
+
+	kind = str(plan.get("kind") or "").strip()
+	route = str(plan.get("route") or "").strip()
+	target_label = str(plan.get("target_label") or "").strip()
+	module_name = str(plan.get("module") or "").strip()
+	doctype_name = str(plan.get("doctype") or "").strip()
+	workspace = str(plan.get("workspace") or "").strip()
+
+	if kind == "module" and module_name:
+		route = f"/app/{_route_slug(module_name)}"
 		if lang == "ru":
-			base = [f"Нашёл: **{name}**.", f"Откройте: `{route}`."]
-			if module:
-				base.append(f"Обычно путь в меню: **{module} → {name}**.")
+			return f"Topdim: **{module_name}** modul. Ochish: `{route}`."
+		if lang == "en":
+			return f"Found module: **{module_name}**. Open: `{route}`."
+		return f"Topdim: **{module_name}** moduli. Ochish: `{route}`."
+
+	if kind == "doctype" and doctype_name:
+		if lang == "ru":
+			base = [f"Нашёл: **{doctype_name}**.", f"Откройте: `{route}`."]
+			if module_name:
+				base.append(f"Обычно путь в меню: **{module_name} → {doctype_name}**.")
 			if workspace:
 				base.append(f"Также можно найти в workspace: **{workspace}**.")
 			return " ".join(base)
 		if lang == "en":
-			base = [f"Found it: **{name}**.", f"Open: `{route}`."]
-			if module:
-				base.append(f"Menu path is usually: **{module} → {name}**.")
+			base = [f"Found it: **{doctype_name}**.", f"Open: `{route}`."]
+			if module_name:
+				base.append(f"Menu path is usually: **{module_name} → {doctype_name}**.")
 			if workspace:
 				base.append(f"You can also find it in workspace: **{workspace}**.")
 			return " ".join(base)
 
-		base = [f"Topdim: **{name}**.", f"Ochish manzili: `{route}`."]
-		if module:
-			base.append(f"Chap menyudagi yo'l: **{module} → {name}**.")
+		base = [f"Topdim: **{doctype_name}**.", f"Ochish manzili: `{route}`."]
+		if module_name:
+			base.append(f"Chap menyudagi yo'l: **{module_name} → {doctype_name}**.")
 		if workspace:
 			base.append(f"Workspace: **{workspace}**.")
 		return " ".join(base)
-
-	if module_name:
-		route = f"/app/{_route_slug(module_name)}"
-		if lang == "ru":
-			return f"Topdim: **{module_name}** модуль. Откройте: `{route}`."
-		if lang == "en":
-			return f"Found module: **{module_name}**. Open: `{route}`."
-		return f"Topdim: **{module_name}** moduli. Ochish: `{route}`."
 
 	if strict:
 		return ""
@@ -287,3 +327,8 @@ def build_navigation_reply(user_message: str, *, lang: str, strict: bool = False
 	if lang == "en":
 		return "I couldn't find the exact section. Please provide the full DocType name (e.g., Stock Entry, Sales Invoice)."
 	return "Aniq bo'limni topa olmadim. DocType nomini to'liq yozing (masalan: Stock Entry, Sales Invoice)."
+
+
+def build_navigation_reply(user_message: str, *, lang: str, strict: bool = False) -> str:
+	plan = build_navigation_plan(user_message)
+	return build_navigation_reply_from_plan(plan, lang=lang, strict=strict)

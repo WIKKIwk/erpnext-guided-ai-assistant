@@ -428,6 +428,116 @@
 	justify-content: flex-end;
 }
 
+.erpnext-ai-tutor-message-actions {
+	margin-top: 8px;
+	display: flex;
+	justify-content: flex-start;
+}
+
+.erpnext-ai-tutor-guide-btn {
+	border: 1px solid rgba(255, 255, 255, 0.5);
+	background: rgba(255, 255, 255, 0.16);
+	color: rgba(255, 255, 255, 0.98);
+	border-radius: 999px;
+	padding: 4px 10px;
+	font-size: 12px;
+	line-height: 1.2;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 120ms ease, transform 120ms ease, filter 120ms ease;
+}
+
+.erpnext-ai-tutor-guide-btn:hover {
+	background: rgba(255, 255, 255, 0.22);
+	filter: brightness(1.04);
+}
+
+.erpnext-ai-tutor-guide-btn:active {
+	transform: translateY(1px);
+}
+
+.erpnext-ai-tutor-guide-layer {
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 2147483000;
+}
+
+.erpnext-ai-tutor-guide-highlight {
+	position: fixed;
+	border: 2px solid rgba(59, 130, 246, 0.95);
+	border-radius: 12px;
+	box-shadow:
+		0 0 0 9999px rgba(2, 6, 23, 0.32),
+		0 10px 36px rgba(2, 6, 23, 0.35);
+	transition:
+		left 280ms ease,
+		top 280ms ease,
+		width 280ms ease,
+		height 280ms ease;
+}
+
+.erpnext-ai-tutor-guide-tooltip {
+	position: fixed;
+	max-width: min(320px, calc(100vw - 24px));
+	padding: 8px 10px;
+	border-radius: 10px;
+	border: 1px solid rgba(59, 130, 246, 0.55);
+	background: rgba(15, 23, 42, 0.94);
+	color: rgba(255, 255, 255, 0.96);
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.35;
+	box-shadow: 0 12px 36px rgba(2, 6, 23, 0.45);
+	transition:
+		left 220ms ease,
+		top 220ms ease;
+}
+
+.erpnext-ai-tutor-guide-cursor {
+	position: fixed;
+	width: 20px;
+	height: 20px;
+	border-radius: 999px;
+	background: linear-gradient(135deg, #60a5fa, #2563eb);
+	box-shadow:
+		0 0 0 3px rgba(255, 255, 255, 0.92),
+		0 10px 24px rgba(37, 99, 235, 0.48);
+	left: 16px;
+	top: 16px;
+	transform: translate(-50%, -50%);
+	transition:
+		left 520ms cubic-bezier(0.2, 0.8, 0.2, 1),
+		top 520ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.erpnext-ai-tutor-guide-cursor::after {
+	content: "";
+	position: absolute;
+	left: 5px;
+	top: 5px;
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.95);
+}
+
+.erpnext-ai-tutor-guide-cursor.is-pulse {
+	animation: erpnextAiTutorGuidePulse 360ms ease-out;
+}
+
+@keyframes erpnextAiTutorGuidePulse {
+	0% {
+		transform: translate(-50%, -50%) scale(1);
+	}
+	50% {
+		transform: translate(-50%, -50%) scale(0.82);
+	}
+	100% {
+		transform: translate(-50%, -50%) scale(1);
+	}
+}
+
 .erpnext-ai-tutor-message.user.sending .erpnext-ai-tutor-meta-status::after {
 	content: "...";
 	display: inline-block;
@@ -577,7 +687,11 @@
 	.erpnext-ai-tutor-icon-btn,
 	.erpnext-ai-tutor-history-item,
 	.erpnext-ai-tutor-input,
-	.erpnext-ai-tutor-send {
+	.erpnext-ai-tutor-send,
+	.erpnext-ai-tutor-guide-btn,
+	.erpnext-ai-tutor-guide-highlight,
+	.erpnext-ai-tutor-guide-tooltip,
+	.erpnext-ai-tutor-guide-cursor {
 		animation: none !important;
 		transition: none !important;
 	}

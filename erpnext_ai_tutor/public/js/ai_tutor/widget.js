@@ -6,6 +6,7 @@
 	const ns = (window.ERPNextAITutor = window.ERPNextAITutor || {});
 	const u = ns.utils;
 	if (!u) return;
+	const GuideRunner = ns.GuideRunner;
 
 	const {
 		METHOD_GET_CONFIG,
@@ -60,6 +61,7 @@
 			this.$historyBtn = null;
 			this.$newChatBtn = null;
 			this.$typing = null;
+			this.guideRunner = null;
 				this.activeField = null;
 				this.routeKey = this.getRouteKey();
 				this._welcomeShownNoMarker = false;
@@ -67,6 +69,9 @@
 
 		async init() {
 			this.render();
+			if (typeof GuideRunner === "function") {
+				this.guideRunner = new GuideRunner({ widget: this });
+			}
 			this.loadChatState();
 			await this.loadConfig();
 			if (this.isAdvancedMode()) {
@@ -82,6 +87,43 @@
 		isAdvancedMode() {
 			if (!this.config) return true;
 			return this.config.advanced_mode !== false;
+		}
+
+		isGuidedCursorEnabled() {
+			return this.isAdvancedMode() && this.config?.guided_cursor !== false;
+		}
+
+		normalizeGuidePayload(raw) {
+			if (!raw || typeof raw !== "object") return null;
+			if (String(raw.type || "") !== "navigation") return null;
+			const route = String(raw.route || "").trim();
+			if (!route || !route.startsWith("/app/")) return null;
+			const menuPathRaw = Array.isArray(raw.menu_path) ? raw.menu_path : [];
+			const menuPath = menuPathRaw
+				.map((x) => String(x || "").trim())
+				.filter(Boolean)
+				.slice(0, 6);
+			return {
+				type: "navigation",
+				route,
+				target_label: String(raw.target_label || "").trim(),
+				menu_path: menuPath,
+			};
+		}
+
+		async runGuidedCursor(guide, opts = { auto: false }) {
+			if (!guide || !this.isGuidedCursorEnabled() || !this.guideRunner) return;
+			try {
+				await this.guideRunner.run(guide);
+			} catch {
+				if (!opts?.auto) {
+					this.append(
+						"assistant",
+						"Kursor yo‘riqnomani ishga tushirib bo‘lmadi. Sahifani yangilab qayta urinib ko‘ring.",
+						{ route_key: this.routeKey || this.getRouteKey() }
+					);
+				}
+			}
 		}
 
 		getEmojiStyle() {
@@ -391,8 +433,9 @@
 			const messages = Array.isArray(conv.messages) ? conv.messages : [];
 			for (const m of messages) {
 				if (!m || !m.role) continue;
-				this.history.push({ role: m.role, content: m.content, route_key: m.route_key || "" });
-				this.appendToDOM(m.role, m.content, m.ts, { animate: false });
+				const guide = this.normalizeGuidePayload(m.guide);
+				this.history.push({ role: m.role, content: m.content, route_key: m.route_key || "", guide });
+				this.appendToDOM(m.role, m.content, m.ts, { animate: false, guide });
 			}
 			this.$body.scrollTop = this.$body.scrollHeight;
 		}
@@ -421,6 +464,20 @@
 			meta.append(metaTime, metaStatus);
 
 			bubble.append(text, meta);
+			const guide = this.normalizeGuidePayload(opts?.guide);
+			if (role === "assistant" && guide && this.isGuidedCursorEnabled()) {
+				const actions = document.createElement("div");
+				actions.className = "erpnext-ai-tutor-message-actions";
+				const guideBtn = document.createElement("button");
+				guideBtn.type = "button";
+				guideBtn.className = "erpnext-ai-tutor-guide-btn";
+				guideBtn.textContent = "Ko'rsatib ber";
+				guideBtn.addEventListener("click", () => {
+					this.runGuidedCursor(guide, { auto: false });
+				});
+				actions.appendChild(guideBtn);
+				bubble.appendChild(actions);
+			}
 			wrap.appendChild(bubble);
 			this.$body.appendChild(wrap);
 			return wrap;
@@ -775,6 +832,7 @@
 			this.$drawer.classList.add("erpnext-ai-tutor-hidden");
 			this.clearPill();
 			this.hideTyping();
+			if (this.guideRunner) this.guideRunner.stop();
 		}
 
 		toggle() {
@@ -788,13 +846,14 @@
 
 			const ts = Date.now();
 			const routeKey = String(opts?.route_key || this.routeKey || this.getRouteKey() || "").trim();
-			this.history.push({ role, content, route_key: routeKey });
-			const el = this.appendToDOM(role, content, ts, { animate: true });
+			const guide = this.normalizeGuidePayload(opts?.guide);
+			this.history.push({ role, content, route_key: routeKey, guide });
+			const el = this.appendToDOM(role, content, ts, { animate: true, guide });
 
 			const conv = this.getActiveConversation();
 			if (conv) {
 				if (!Array.isArray(conv.messages)) conv.messages = [];
-				conv.messages.push({ role, content, ts, route_key: routeKey });
+				conv.messages.push({ role, content, ts, route_key: routeKey, guide });
 				conv.updated_at = ts;
 				conv.messages = conv.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
 				this.pruneChatState();
@@ -936,9 +995,15 @@
 				if (!replyText) {
 					throw new Error("EMPTY_REPLY");
 				}
+				const guide = this.normalizeGuidePayload(r?.message?.guide);
 				this.hideTyping();
 				this.setMessageStatus(userEl, "sent");
-				this.append("assistant", replyText, { route_key: routeKey });
+				this.append("assistant", replyText, { route_key: routeKey, guide });
+				if (guide && this.isGuidedCursorEnabled()) {
+					window.setTimeout(() => {
+						this.runGuidedCursor(guide, { auto: true });
+					}, 280);
+				}
 			} catch (e) {
 				this.hideTyping();
 				this.setMessageStatus(userEl, "failed");
