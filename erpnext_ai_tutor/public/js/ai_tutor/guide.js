@@ -564,11 +564,6 @@
 			if (!route || !this.running) return;
 			if (this.isAtRoute(route)) return;
 
-			const searchInput = this.findSearchInput();
-			if (searchInput) {
-				await this.focusElement(searchInput, "Qidiruvdan ham ochish mumkin.", { click: false });
-			}
-
 			const parts = this.routeToParts(route);
 			if (parts.length && frappe && typeof frappe.set_route === "function") {
 				frappe.set_route(parts);
@@ -610,6 +605,7 @@
 			this.stop();
 			this.running = true;
 			this.createLayer();
+			let clickedPrimaryTarget = false;
 
 			try {
 				const steps = this.buildSteps(guide);
@@ -639,12 +635,24 @@
 							}
 							continue;
 						}
-						await this.focusElement(el, step.message, { click: Boolean(step.click) });
+						const clicked = await this.focusElement(el, step.message, { click: Boolean(step.click) });
+						if (clicked && step.click) {
+							clickedPrimaryTarget = true;
+							if (guide.route) {
+								await this.waitFor(() => this.isAtRoute(guide.route), 1800, 110);
+							}
+						}
 						continue;
 					}
 					if (step.type === "search") {
 						if (step.skip_if_on_route && this.isAtRoute(guide.route)) {
 							continue;
+						}
+						if (clickedPrimaryTarget && guide.route) {
+							const alreadyOpened = await this.waitFor(() => this.isAtRoute(guide.route), 1400, 110);
+							if (alreadyOpened) {
+								continue;
+							}
 						}
 						await this.trySearchFallback(step, guide);
 						continue;
