@@ -523,6 +523,83 @@
 			return queryIndex >= 0 ? noHash.slice(0, queryIndex) : noHash;
 		}
 
+		normalizePath(path) {
+			const cleaned = String(path || "").trim();
+			if (!cleaned) return "";
+			const noHash = cleaned.split("#")[0];
+			const noQuery = noHash.split("?")[0];
+			if (!noQuery) return "";
+			if (noQuery === "/") return "/";
+			return noQuery.replace(/\/+$/, "");
+		}
+
+		hrefToPath(href) {
+			const raw = String(href || "").trim();
+			if (!raw) return "";
+			try {
+				const parsed = new URL(raw, window.location.origin);
+				return this.normalizePath(parsed.pathname);
+			} catch {
+				return this.normalizePath(this.routeToPath(raw));
+			}
+		}
+
+		findByRouteCandidate(route, opts = { allowHidden: false }) {
+			const targetPath = this.normalizePath(this.routeToPath(route));
+			if (!targetPath) return null;
+			const allowHidden = Boolean(opts?.allowHidden);
+			const selectors = [
+				".desk-sidebar a[href^='/app/']",
+				".layout-main .widget a[href^='/app/']",
+				".layout-main a[href^='/app/']",
+				"a[href^='/app/']",
+			];
+
+			let bestVisible = null;
+			let bestVisibleScore = 0;
+			let bestHidden = null;
+			let bestHiddenScore = 0;
+
+			for (const sel of selectors) {
+				const nodes = document.querySelectorAll(sel);
+				for (const node of nodes) {
+					const el = getClickable(node);
+					if (!el) continue;
+					const visible = isVisible(el);
+					if (!visible && !allowHidden) continue;
+					const href = String(el.getAttribute("href") || node.getAttribute("href") || "").trim();
+					if (!href) continue;
+					const candidatePath = this.hrefToPath(href);
+					if (!candidatePath || !candidatePath.startsWith("/app/")) continue;
+
+					let score = 0;
+					if (candidatePath === targetPath) score = 120;
+					else if (candidatePath.startsWith(targetPath + "/")) score = 110;
+					else if (targetPath.startsWith(candidatePath + "/")) score = 92;
+					else if (candidatePath.includes(targetPath) || targetPath.includes(candidatePath)) score = 76;
+					else continue;
+
+					if (visible) {
+						if (score > bestVisibleScore) {
+							bestVisible = el;
+							bestVisibleScore = score;
+						}
+					} else if (score > bestHiddenScore) {
+						bestHidden = el;
+						bestHiddenScore = score;
+					}
+				}
+			}
+
+			if (bestVisible && bestVisibleScore >= 88) {
+				return { el: bestVisible, visible: true, score: bestVisibleScore };
+			}
+			if (allowHidden && bestHidden && bestHiddenScore >= 88) {
+				return { el: bestHidden, visible: false, score: bestHiddenScore };
+			}
+			return null;
+		}
+
 		isAtRoute(route) {
 			const targetPath = this.routeToPath(route);
 			if (!targetPath) return false;
@@ -542,6 +619,25 @@
 		async navigate(route) {
 			if (!route || !this.running) return;
 			if (this.isAtRoute(route)) return;
+
+			let routeMatch = this.findByRouteCandidate(route, { allowHidden: true });
+			if (routeMatch && !routeMatch.visible) {
+				await this.expandCollapsedAncestors(routeMatch.el);
+				await this.sleep(90);
+				routeMatch = this.findByRouteCandidate(route, { allowHidden: false });
+			}
+			if (!routeMatch) {
+				routeMatch = this.findByRouteCandidate(route, { allowHidden: false });
+			}
+			if (routeMatch?.el && isVisible(routeMatch.el)) {
+				await this.focusElement(routeMatch.el, "2-qadam: kerakli bo'lim tugmasini bosamiz.", {
+					click: true,
+					duration_ms: 320,
+					pre_click_pause_ms: 120,
+				});
+				const openedByClick = await this.waitFor(() => this.isAtRoute(route), 3200, 110);
+				if (openedByClick) return;
+			}
 
 			const parts = this.routeToParts(route);
 			if (parts.length && frappe && typeof frappe.set_route === "function") {
