@@ -35,6 +35,10 @@
 		getCanonicalRouteKey,
 	} = u;
 
+	const DRAFT_STORAGE_PREFIX = "erpnext_ai_tutor_draft";
+	const INPUT_MIN_HEIGHT = 38;
+	const INPUT_MAX_HEIGHT = 160;
+
 	class TutorWidget {
 			constructor() {
 			this.config = null;
@@ -57,11 +61,15 @@
 			this.$footer = null;
 			this.$input = null;
 			this.$send = null;
+			this.$fab = null;
 			this.$pill = null;
 			this.$historyBtn = null;
 			this.$newChatBtn = null;
 			this.$typing = null;
 			this.guideRunner = null;
+			this._boundGlobalKeydown = (ev) => this.onGlobalKeydown(ev);
+			this._boundDrawerKeydown = (ev) => this.onDrawerKeydown(ev);
+			this._lastFocusedBeforeOpen = null;
 				this.activeField = null;
 				this.routeKey = this.getRouteKey();
 				this._welcomeShownNoMarker = false;
@@ -152,6 +160,245 @@
 				target_label: repaired.target_label,
 				menu_path: repaired.menu_path,
 			};
+		}
+
+		getDraftStorageKey(routeKey = "") {
+			const user = String(frappe?.session?.user || "Guest").trim() || "Guest";
+			const route = String(routeKey || this.routeKey || this.getRouteKey() || "")
+				.trim()
+				.slice(0, 220);
+			return `${DRAFT_STORAGE_PREFIX}:${window.location.host}:${user}:${route}`;
+		}
+
+		saveDraft(routeKey = "") {
+			if (!window.localStorage || !this.$input) return;
+			const value = String(this.$input.value || "");
+			const key = this.getDraftStorageKey(routeKey);
+			try {
+				if (value.trim()) {
+					window.localStorage.setItem(key, value);
+				} else {
+					window.localStorage.removeItem(key);
+				}
+			} catch {
+				// ignore
+			}
+		}
+
+		loadDraftForRoute(routeKey = "") {
+			if (!window.localStorage || !this.$input) return;
+			const key = this.getDraftStorageKey(routeKey);
+			let value = "";
+			try {
+				value = String(window.localStorage.getItem(key) || "");
+			} catch {
+				value = "";
+			}
+			this.$input.value = value;
+			this.resizeInput();
+		}
+
+		clearDraft(routeKey = "") {
+			if (!window.localStorage) return;
+			const key = this.getDraftStorageKey(routeKey);
+			try {
+				window.localStorage.removeItem(key);
+			} catch {
+				// ignore
+			}
+		}
+
+		resizeInput() {
+			if (!this.$input) return;
+			this.$input.style.height = "auto";
+			const nextHeight = Math.min(INPUT_MAX_HEIGHT, Math.max(INPUT_MIN_HEIGHT, this.$input.scrollHeight));
+			this.$input.style.height = `${nextHeight}px`;
+			this.$input.style.overflowY = this.$input.scrollHeight > INPUT_MAX_HEIGHT ? "auto" : "hidden";
+		}
+
+		getFocusableInDrawer() {
+			if (!this.$drawer) return [];
+			const selector = [
+				"button",
+				"[href]",
+				"input",
+				"select",
+				"textarea",
+				"[tabindex]:not([tabindex='-1'])",
+			].join(",");
+			return Array.from(this.$drawer.querySelectorAll(selector)).filter((el) => {
+				if (!el || el.disabled) return false;
+				const style = window.getComputedStyle(el);
+				if (!style || style.visibility === "hidden" || style.display === "none") return false;
+				return el.getClientRects().length > 0;
+			});
+		}
+
+		onDrawerKeydown(e) {
+			if (!this.isOpen || !this.$drawer || e.key !== "Tab") return;
+			const focusable = this.getFocusableInDrawer();
+			if (!focusable.length) return;
+			const first = focusable[0];
+			const last = focusable[focusable.length - 1];
+			const active = document.activeElement;
+			if (e.shiftKey && (active === first || !this.$drawer.contains(active))) {
+				e.preventDefault();
+				last.focus();
+				return;
+			}
+			if (!e.shiftKey && (active === last || !this.$drawer.contains(active))) {
+				e.preventDefault();
+				first.focus();
+			}
+		}
+
+		onGlobalKeydown(e) {
+			if (!this.isOpen) return;
+			if (e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				this.close();
+			}
+		}
+
+		navigateToRoute(route) {
+			const cleaned = this.normalizeRoutePath(route);
+			if (!cleaned || !cleaned.startsWith("/app/")) return;
+			const parts = cleaned.replace(/^\/app\//, "").split("/").filter(Boolean);
+			try {
+				if (frappe?.set_route && parts.length) {
+					frappe.set_route("app", ...parts);
+					return;
+				}
+			} catch {
+				// ignore and fallback
+			}
+			window.location.href = cleaned;
+		}
+
+		makeRouteChip(route) {
+			const cleaned = this.normalizeRoutePath(route) || String(route || "").trim();
+			const chip = document.createElement("a");
+			chip.className = "erpnext-ai-tutor-route-chip";
+			chip.href = cleaned;
+			chip.textContent = cleaned;
+			chip.setAttribute("data-route", cleaned);
+			chip.addEventListener("click", (ev) => {
+				ev.preventDefault();
+				this.navigateToRoute(cleaned);
+			});
+			return chip;
+		}
+
+		appendInlineRich(target, source) {
+			const value = String(source || "");
+			if (!value) return;
+			const tokenRe = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\/app\/[a-z0-9][a-z0-9\-_/]*)/gi;
+			let lastIndex = 0;
+			let match = null;
+			while ((match = tokenRe.exec(value)) !== null) {
+				const token = String(match[0] || "");
+				const index = Number(match.index) || 0;
+				if (index > lastIndex) {
+					target.appendChild(document.createTextNode(value.slice(lastIndex, index)));
+				}
+				if (token.startsWith("`") && token.endsWith("`")) {
+					const codeText = token.slice(1, -1).trim();
+					if (/^\/app\/[a-z0-9][a-z0-9\-_/]*$/i.test(codeText)) {
+						target.appendChild(this.makeRouteChip(codeText));
+					} else {
+						const code = document.createElement("code");
+						code.textContent = codeText;
+						target.appendChild(code);
+					}
+				} else if (token.startsWith("**") && token.endsWith("**")) {
+					const strong = document.createElement("strong");
+					strong.textContent = token.slice(2, -2).trim();
+					target.appendChild(strong);
+				} else if (/^\/app\/[a-z0-9][a-z0-9\-_/]*$/i.test(token)) {
+					target.appendChild(this.makeRouteChip(token));
+				} else {
+					target.appendChild(document.createTextNode(token));
+				}
+				lastIndex = index + token.length;
+			}
+			if (lastIndex < value.length) {
+				target.appendChild(document.createTextNode(value.slice(lastIndex)));
+			}
+		}
+
+		renderRichText(target, content) {
+			const text = String(content ?? "").replace(/\r\n/g, "\n");
+			const lines = text.split("\n");
+			const bulletRe = /^\s*[\*\-]\s+(.+)$/;
+			const orderedRe = /^\s*(\d+)\.\s+(.+)$/;
+			let i = 0;
+			let hasBlock = false;
+
+			while (i < lines.length) {
+				const raw = String(lines[i] || "");
+				const trimmed = raw.trim();
+				if (!trimmed) {
+					i += 1;
+					continue;
+				}
+
+				const bulletMatch = raw.match(bulletRe);
+				if (bulletMatch) {
+					const ul = document.createElement("ul");
+					while (i < lines.length) {
+						const m = String(lines[i] || "").match(bulletRe);
+						if (!m) break;
+						const li = document.createElement("li");
+						this.appendInlineRich(li, m[1]);
+						ul.appendChild(li);
+						i += 1;
+					}
+					target.appendChild(ul);
+					hasBlock = true;
+					continue;
+				}
+
+				const orderedMatch = raw.match(orderedRe);
+				if (orderedMatch) {
+					const ol = document.createElement("ol");
+					const start = parseInt(String(orderedMatch[1] || "1"), 10);
+					if (Number.isFinite(start) && start > 1) ol.start = start;
+					while (i < lines.length) {
+						const m = String(lines[i] || "").match(orderedRe);
+						if (!m) break;
+						const li = document.createElement("li");
+						this.appendInlineRich(li, m[2]);
+						ol.appendChild(li);
+						i += 1;
+					}
+					target.appendChild(ol);
+					hasBlock = true;
+					continue;
+				}
+
+				const p = document.createElement("p");
+				while (i < lines.length) {
+					const line = String(lines[i] || "");
+					const lineTrimmed = line.trim();
+					if (!lineTrimmed) break;
+					if (bulletRe.test(line) || orderedRe.test(line)) break;
+					this.appendInlineRich(p, line);
+					i += 1;
+					if (i < lines.length) {
+						const nextLine = String(lines[i] || "");
+						if (nextLine.trim() && !bulletRe.test(nextLine) && !orderedRe.test(nextLine)) {
+							p.appendChild(document.createElement("br"));
+						}
+					}
+				}
+				target.appendChild(p);
+				hasBlock = true;
+			}
+
+			if (!hasBlock) {
+				target.textContent = String(content ?? "");
+			}
 		}
 
 		async runGuidedCursor(guide, opts = { auto: false }) {
@@ -272,6 +519,8 @@
 		}
 
 		onRouteChanged(nextRouteKey) {
+			const previousRouteKey = this.routeKey || this.getRouteKey();
+			this.saveDraft(previousRouteKey);
 			this.routeKey = nextRouteKey || this.getRouteKey();
 			// Prevent stale page state from leaking into the next request.
 			this.lastEvent = null;
@@ -282,6 +531,7 @@
 			this.autoHelpDisabledUntil = 0;
 			this.suppressEventsUntil = 0;
 			this.clearPill();
+			this.loadDraftForRoute(this.routeKey);
 		}
 
 		checkRouteChange() {
@@ -307,7 +557,7 @@
 				<button class="erpnext-ai-tutor-fab" type="button" aria-label="AI Tutor">
 					${frappe?.utils?.icon ? frappe.utils.icon("es-line-question", "md") : "AI"}
 				</button>
-				<div class="erpnext-ai-tutor-drawer erpnext-ai-tutor-hidden" role="dialog" aria-label="AI Tutor">
+				<div class="erpnext-ai-tutor-drawer erpnext-ai-tutor-hidden" role="dialog" aria-label="AI Tutor" aria-modal="false" aria-hidden="true">
 							<div class="erpnext-ai-tutor-header">
 								<div>
 									<div class="erpnext-ai-tutor-title">AI Tutor</div>
@@ -348,11 +598,18 @@
 			this.$footer = root.querySelector(".erpnext-ai-tutor-footer");
 			this.$input = root.querySelector(".erpnext-ai-tutor-input");
 			this.$send = root.querySelector(".erpnext-ai-tutor-send");
+			this.$fab = root.querySelector(".erpnext-ai-tutor-fab");
 			this.$pill = root.querySelector(".erpnext-ai-tutor-pill");
 			this.$historyBtn = root.querySelector(".erpnext-ai-tutor-history-btn");
 			this.$newChatBtn = root.querySelector(".erpnext-ai-tutor-new-btn");
+			this.$body.setAttribute("role", "log");
+			this.$body.setAttribute("aria-live", "polite");
+			this.$body.setAttribute("aria-relevant", "additions text");
+			this.$body.setAttribute("aria-atomic", "false");
+			this.$input.setAttribute("aria-label", "AI Tutor message input");
+			this.$input.setAttribute("aria-keyshortcuts", "Enter,Control+Enter,Meta+Enter,Escape");
 
-			root.querySelector(".erpnext-ai-tutor-fab").addEventListener("click", () => this.toggle());
+			this.$fab.addEventListener("click", () => this.toggle());
 			root.querySelector(".erpnext-ai-tutor-close").addEventListener("click", () => this.close());
 			this.$historyBtn.addEventListener("click", () => this.toggleHistory());
 			this.$newChatBtn.addEventListener("click", () => this.newChat());
@@ -362,12 +619,27 @@
 				await this.sendUserMessage();
 			});
 
+			this.$drawer.addEventListener("keydown", this._boundDrawerKeydown);
+			document.addEventListener("keydown", this._boundGlobalKeydown, true);
+			this.$input.addEventListener("input", () => {
+				this.resizeInput();
+				this.saveDraft(this.routeKey);
+			});
 			this.$input.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" && !e.shiftKey) {
+				if (e.key === "Escape") {
+					e.preventDefault();
+					this.close();
+					return;
+				}
+				const sendWithModifier = e.key === "Enter" && (e.ctrlKey || e.metaKey);
+				const sendWithEnter = e.key === "Enter" && !e.shiftKey;
+				if (sendWithModifier || sendWithEnter) {
 					e.preventDefault();
 					this.sendUserMessage();
 				}
 			});
+			this.resizeInput();
+			this.loadDraftForRoute(this.routeKey || this.getRouteKey());
 		}
 
 		loadChatState() {
@@ -493,6 +765,7 @@
 		appendToDOM(role, content, ts, opts = { animate: true }) {
 			const wrap = document.createElement("div");
 			wrap.className = `erpnext-ai-tutor-message ${role}`;
+			wrap.setAttribute("role", "listitem");
 			if (opts?.animate) wrap.classList.add("is-new");
 
 			const bubble = document.createElement("div");
@@ -500,7 +773,11 @@
 
 			const text = document.createElement("div");
 			text.className = "erpnext-ai-tutor-text";
-			text.textContent = String(content ?? "");
+			if (role === "assistant") {
+				this.renderRichText(text, String(content ?? ""));
+			} else {
+				text.textContent = String(content ?? "");
+			}
 
 			const meta = document.createElement("div");
 			meta.className = "erpnext-ai-tutor-meta";
@@ -872,17 +1149,32 @@
 
 		open() {
 			if (this.isOpen) return;
+			this._lastFocusedBeforeOpen = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 			this.isOpen = true;
 			this.$drawer.classList.remove("erpnext-ai-tutor-hidden");
-			setTimeout(() => this.$input && this.$input.focus(), 0);
+			this.$drawer.setAttribute("aria-hidden", "false");
+			this.loadDraftForRoute(this.routeKey);
+			setTimeout(() => {
+				this.resizeInput();
+				if (this.$input) this.$input.focus();
+			}, 0);
 		}
 
 		close() {
+			this.saveDraft(this.routeKey);
 			this.isOpen = false;
 			this.$drawer.classList.add("erpnext-ai-tutor-hidden");
+			this.$drawer.setAttribute("aria-hidden", "true");
 			this.clearPill();
 			this.hideTyping();
 			if (this.guideRunner) this.guideRunner.stop();
+			const fallbackFocus = this.$fab;
+			const restoreTo = this._lastFocusedBeforeOpen;
+			if (restoreTo && typeof restoreTo.focus === "function" && !this.$drawer.contains(restoreTo)) {
+				restoreTo.focus();
+			} else if (fallbackFocus && typeof fallbackFocus.focus === "function") {
+				fallbackFocus.focus();
+			}
 		}
 
 		toggle() {
@@ -1009,7 +1301,10 @@
 			if (this.isBusy) return;
 			const text = String(this.$input.value || "").trim();
 			if (!text) return;
+			const routeKey = this.routeKey || this.getRouteKey();
 			this.$input.value = "";
+			this.clearDraft(routeKey);
+			this.resizeInput();
 			await this.ask(text, { source: "user" });
 		}
 
