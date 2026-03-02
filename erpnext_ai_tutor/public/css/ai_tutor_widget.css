@@ -479,9 +479,28 @@
 		filter 220ms ease;
 }
 
+.erpnext-ai-tutor-guide-cursor::after {
+	content: "";
+	position: absolute;
+	left: 13px;
+	top: 8px;
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+	border: 2px solid rgba(59, 130, 246, 0.85);
+	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.65);
+	opacity: 0;
+	transform: translate(-50%, -50%) scale(0.45);
+	pointer-events: none;
+}
+
 .erpnext-ai-tutor-guide-cursor.is-pulse {
 	animation: erpnextAiTutorGuidePulse 360ms ease-out;
 	filter: drop-shadow(0 9px 18px rgba(37, 99, 235, 0.34));
+}
+
+.erpnext-ai-tutor-guide-cursor.is-pulse::after {
+	animation: erpnextAiTutorGuideClickRing 360ms ease-out;
 }
 
 @keyframes erpnextAiTutorGuidePulse {
@@ -493,6 +512,21 @@
 	}
 	100% {
 		transform: scale(1);
+	}
+}
+
+@keyframes erpnextAiTutorGuideClickRing {
+	0% {
+		opacity: 0.95;
+		transform: translate(-50%, -50%) scale(0.42);
+	}
+	70% {
+		opacity: 0.32;
+		transform: translate(-50%, -50%) scale(2.15);
+	}
+	100% {
+		opacity: 0;
+		transform: translate(-50%, -50%) scale(2.7);
 	}
 }
 
@@ -650,5 +684,9 @@
 	.erpnext-ai-tutor-guide-cursor {
 		animation: none !important;
 		transition: none !important;
+	}
+
+	.erpnext-ai-tutor-guide-cursor::after {
+		animation: none !important;
 	}
 }
