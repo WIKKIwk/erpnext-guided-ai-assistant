@@ -540,10 +540,37 @@
 			return isVisible(el) ? el : null;
 		}
 
-		getLargestTextRect(rootEl) {
-			if (!rootEl || typeof document.createTreeWalker !== "function") return null;
-			let best = null;
-			let bestArea = 0;
+		makePoint(x, y) {
+			return {
+				x: clamp(Number(x), 2, window.innerWidth - 2),
+				y: clamp(Number(y), 2, window.innerHeight - 2),
+			};
+		}
+
+		pointsFromRect(rect) {
+			if (!rect) return [];
+			const cx = rect.left + rect.width * 0.5;
+			const cy = rect.top + rect.height * 0.5;
+			const l = rect.left + rect.width * 0.28;
+			const r = rect.left + rect.width * 0.72;
+			const t = rect.top + rect.height * 0.36;
+			const b = rect.top + rect.height * 0.66;
+			return [
+				this.makePoint(cx, cy),
+				this.makePoint(l, cy),
+				this.makePoint(r, cy),
+				this.makePoint(cx, t),
+				this.makePoint(cx, b),
+				this.makePoint(l, t),
+				this.makePoint(r, t),
+				this.makePoint(l, b),
+				this.makePoint(r, b),
+			];
+		}
+
+		getTextRects(rootEl, maxRects = 16) {
+			if (!rootEl || typeof document.createTreeWalker !== "function") return [];
+			const rects = [];
 			let walker = null;
 			try {
 				walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
@@ -559,31 +586,34 @@
 					},
 				});
 			} catch {
-				return null;
+				return [];
 			}
-			if (!walker) return null;
+			if (!walker) return [];
 
 			let node = walker.nextNode();
 			while (node) {
 				try {
 					const range = document.createRange();
 					range.selectNodeContents(node);
-					const rects = range.getClientRects();
-					for (const r of rects) {
+					const clientRects = range.getClientRects();
+					for (const r of clientRects) {
 						const rect = this.rectFromDomRect(r);
 						if (!rect) continue;
-						const area = rect.width * rect.height;
-						if (area > bestArea) {
-							bestArea = area;
-							best = rect;
-						}
+						rects.push(rect);
 					}
 				} catch {
 					// ignore bad text node ranges
 				}
 				node = walker.nextNode();
 			}
-			return best;
+
+			rects.sort((a, b) => b.width * b.height - a.width * a.height);
+			return rects.slice(0, Math.max(1, maxRects));
+		}
+
+		getLargestTextRect(rootEl) {
+			const rects = this.getTextRects(rootEl, 1);
+			return rects.length ? rects[0] : null;
 		}
 
 		getPreciseTargetPoint(el) {
@@ -591,15 +621,8 @@
 			const labelTextRect = this.getLargestTextRect(preferred);
 			const rect = labelTextRect || this.getRect(preferred);
 			if (!rect) return null;
-
-			const innerPadX = Math.min(8, Math.max(2, rect.width * 0.22));
-			const innerPadY = Math.min(6, Math.max(2, rect.height * 0.25));
-			const targetX = clamp(rect.left + rect.width * 0.52, rect.left + innerPadX, rect.right - innerPadX);
-			const targetY = clamp(rect.top + rect.height * 0.56, rect.top + innerPadY, rect.bottom - innerPadY);
-			return {
-				x: clamp(targetX, 2, window.innerWidth - 2),
-				y: clamp(targetY, 2, window.innerHeight - 2),
-			};
+			const points = this.pointsFromRect(rect);
+			return points.length ? points[0] : null;
 		}
 
 		getRect(el) {
@@ -658,68 +681,136 @@
 			this._pulseTimers.push(t1);
 		}
 
-		performPreciseClick(el, point = null) {
-			if (!el) return false;
+		isSameClickableTarget(anchor, node) {
+			if (!anchor || !node) return false;
+			const hitClickable = getClickable(node) || node;
+			return hitClickable === anchor || anchor.contains(hitClickable) || hitClickable.contains(anchor);
+		}
+
+		collectCandidatePoints(el, preferredPoint = null) {
+			const preferred = this.getPreferredLabelElement(el) || el;
+			const points = [];
+			if (preferredPoint && Number.isFinite(preferredPoint.x) && Number.isFinite(preferredPoint.y)) {
+				points.push(this.makePoint(preferredPoint.x, preferredPoint.y));
+			}
+
+			const textRects = this.getTextRects(preferred, 8);
+			for (const rect of textRects) {
+				points.push(...this.pointsFromRect(rect));
+			}
+
+			const rootRect = this.getRect(preferred);
+			if (rootRect) {
+				points.push(...this.pointsFromRect(rootRect));
+			}
+
+			// small local scan around the primary point for pixel-level precision
+			if (points.length) {
+				const p = points[0];
+				const offsets = [
+					[-2, 0],
+					[2, 0],
+					[0, -2],
+					[0, 2],
+					[-3, -3],
+					[3, -3],
+					[-3, 3],
+					[3, 3],
+				];
+				for (const [dx, dy] of offsets) {
+					points.push(this.makePoint(p.x + dx, p.y + dy));
+				}
+			}
+
+			const out = [];
+			const seen = new Set();
+			for (const p of points) {
+				const key = `${Math.round(p.x * 10) / 10}:${Math.round(p.y * 10) / 10}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				out.push(p);
+				if (out.length >= 42) break;
+			}
+			return out;
+		}
+
+		resolveExactClickPoint(el, preferredPoint = null) {
+			if (!el) return null;
 			const anchor = getClickable(el) || el;
-			const x = Number(point?.x);
-			const y = Number(point?.y);
-			let target = anchor;
+			const candidates = this.collectCandidatePoints(anchor, preferredPoint);
+			for (const point of candidates) {
+				const hit = document.elementFromPoint(point.x, point.y);
+				if (!hit) continue;
+				if (!this.isSameClickableTarget(anchor, hit)) continue;
+				const target = getClickable(hit) || anchor;
+				return { target, point };
+			}
+			return null;
+		}
 
-			if (Number.isFinite(x) && Number.isFinite(y)) {
-				const hit = document.elementFromPoint(x, y);
-				const hitClickable = getClickable(hit);
-				if (
-					hitClickable &&
-					(anchor === hitClickable || anchor.contains(hitClickable) || hitClickable.contains(anchor))
-				) {
-					target = hitClickable;
-				}
+		performPreciseClick(target, point = null) {
+			if (!target || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+			const x = Number(point.x);
+			const y = Number(point.y);
+			const hit = document.elementFromPoint(x, y);
+			if (!hit) return false;
+			const clickable = getClickable(hit) || hit;
+			if (!(clickable === target || target.contains(clickable) || clickable.contains(target))) {
+				return false;
 			}
 
 			try {
-				if (Number.isFinite(x) && Number.isFinite(y)) {
-					const down = new MouseEvent("mousedown", {
+				if (typeof PointerEvent === "function") {
+					const pointerInit = {
 						bubbles: true,
 						cancelable: true,
 						view: window,
+						pointerId: 1,
+						pointerType: "mouse",
+						isPrimary: true,
 						clientX: x,
 						clientY: y,
 						button: 0,
-					});
-					const up = new MouseEvent("mouseup", {
-						bubbles: true,
-						cancelable: true,
-						view: window,
-						clientX: x,
-						clientY: y,
-						button: 0,
-					});
-					const click = new MouseEvent("click", {
-						bubbles: true,
-						cancelable: true,
-						view: window,
-						clientX: x,
-						clientY: y,
-						button: 0,
-					});
-					target.dispatchEvent(down);
-					target.dispatchEvent(up);
-					target.dispatchEvent(click);
-					return true;
+						buttons: 1,
+					};
+					clickable.dispatchEvent(new PointerEvent("pointerdown", pointerInit));
+					clickable.dispatchEvent(new PointerEvent("pointerup", { ...pointerInit, buttons: 0 }));
 				}
-			} catch {
-				// fallback below
-			}
 
-			try {
-				if (typeof target.click === "function") {
-					target.click();
-					return true;
-				}
+				const down = new MouseEvent("mousedown", {
+					bubbles: true,
+					cancelable: true,
+					view: window,
+					clientX: x,
+					clientY: y,
+					button: 0,
+					buttons: 1,
+				});
+				const up = new MouseEvent("mouseup", {
+					bubbles: true,
+					cancelable: true,
+					view: window,
+					clientX: x,
+					clientY: y,
+					button: 0,
+					buttons: 0,
+				});
+				const click = new MouseEvent("click", {
+					bubbles: true,
+					cancelable: true,
+					view: window,
+					clientX: x,
+					clientY: y,
+					button: 0,
+					buttons: 0,
+				});
+				clickable.dispatchEvent(down);
+				clickable.dispatchEvent(up);
+				clickable.dispatchEvent(click);
+				return true;
 			} catch {
-				// ignore
+				return false;
 			}
-			return false;
 		}
 
 		async focusElement(el, message, opts = { click: false }) {
@@ -738,10 +829,18 @@
 			const settlePause = clamp(Math.round((motion?.duration || 300) * 0.22), 90, 220);
 			await this.sleep((motion?.duration || 300) + settlePause);
 			if (opts.click) {
+				const resolved = this.resolveExactClickPoint(el, targetPoint);
+				if (!resolved) return false;
+				const dx = Math.abs((resolved.point?.x || 0) - (targetPoint?.x || 0));
+				const dy = Math.abs((resolved.point?.y || 0) - (targetPoint?.y || 0));
+				if (dx > 1 || dy > 1) {
+					const correctMotion = this.moveCursorTo(resolved.point, 120);
+					await this.sleep((correctMotion?.duration || 120) + 40);
+				}
 				const hoverPause = this.computeHoverPause(motion?.distance || 0, opts.pre_click_pause_ms);
 				this.clickPulse();
 				await this.sleep(hoverPause);
-				const clicked = this.performPreciseClick(el, targetPoint);
+				const clicked = this.performPreciseClick(resolved.target, resolved.point);
 				await this.sleep(220);
 				return clicked;
 			}
