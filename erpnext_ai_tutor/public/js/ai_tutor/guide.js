@@ -321,20 +321,9 @@
 
 			if (guide.route) {
 				steps.push({
-					type: "search",
-					label: targetLabel || moduleLabel,
-					route: guide.route,
-					message: "2-qadam: bo'lim ko'rinmasa, qidiruv fallbackni sinab ko'ramiz.",
-					optional: true,
-					skip_if_on_route: true,
-				});
-			}
-
-			if (guide.route) {
-				steps.push({
 					type: "navigate",
 					route: guide.route,
-					message: `3-qadam: oxirgi fallback sifatida route orqali ochamiz: ${guide.route}`,
+					message: `2-qadam: fallback sifatida route orqali ochamiz: ${guide.route}`,
 				});
 			}
 			return steps;
@@ -595,7 +584,6 @@
 			this.stop();
 			this.running = true;
 			this.createLayer();
-			let clickedPrimaryTarget = false;
 
 			try {
 				const steps = this.buildSteps(guide);
@@ -626,25 +614,9 @@
 							continue;
 						}
 						const clicked = await this.focusElement(el, step.message, { click: Boolean(step.click) });
-						if (clicked && step.click) {
-							clickedPrimaryTarget = true;
-							if (guide.route) {
-								await this.waitFor(() => this.isAtRoute(guide.route), 1800, 110);
-							}
+						if (clicked && step.click && guide.route) {
+							await this.waitFor(() => this.isAtRoute(guide.route), 1800, 110);
 						}
-						continue;
-					}
-					if (step.type === "search") {
-						if (step.skip_if_on_route && this.isAtRoute(guide.route)) {
-							continue;
-						}
-						if (clickedPrimaryTarget && guide.route) {
-							const alreadyOpened = await this.waitFor(() => this.isAtRoute(guide.route), 1400, 110);
-							if (alreadyOpened) {
-								continue;
-							}
-						}
-						await this.trySearchFallback(step, guide);
 						continue;
 					}
 					if (step.type === "navigate") {
