@@ -653,17 +653,8 @@
 				const openedByClick = await this.waitFor(() => this.isAtRoute(route), 3200, 110);
 				if (openedByClick) return;
 			}
-
-			const parts = this.routeToParts(route);
-			if (parts.length && frappe && typeof frappe.set_route === "function") {
-				frappe.set_route(parts);
-			} else {
-				window.location.href = route;
-				return;
-			}
-
-			await this.waitFor(() => this.isAtRoute(route), 8000, 120);
-			await this.sleep(480);
+			// Strict learn mode: do not force route jump if no visible clickable path was found.
+			return;
 		}
 
 		findHeading(targetLabel) {
