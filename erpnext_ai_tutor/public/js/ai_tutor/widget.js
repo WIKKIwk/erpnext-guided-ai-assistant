@@ -39,8 +39,10 @@
 	const INPUT_MIN_HEIGHT = 38;
 	const INPUT_MAX_HEIGHT = 160;
 	const DRAWER_CLOSE_ANIM_MS = 280;
-	const TYPEWRITER_MIN_MS = 10;
-	const TYPEWRITER_MAX_MS = 26;
+	const TYPEWRITER_MIN_MS = 22;
+	const TYPEWRITER_MAX_MS = 62;
+	const TYPEWRITER_TARGET_MIN_MS = 3600;
+	const TYPEWRITER_TARGET_MAX_MS = 9000;
 	const ICONS = Object.freeze({
 		fab: `
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
@@ -1534,10 +1536,15 @@
 
 			const chars = Array.from(finalText);
 			const total = chars.length;
-			const chunkSize = total > 800 ? 10 : total > 400 ? 7 : total > 200 ? 5 : 3;
+			const chunkSize = total > 900 ? 5 : total > 560 ? 4 : total > 300 ? 3 : total > 140 ? 2 : 1;
+			const steps = Math.max(1, Math.ceil(total / chunkSize));
+			const targetDuration = Math.max(
+				TYPEWRITER_TARGET_MIN_MS,
+				Math.min(TYPEWRITER_TARGET_MAX_MS, 2600 + total * 11)
+			);
 			const delayMs = Math.max(
 				TYPEWRITER_MIN_MS,
-				Math.min(TYPEWRITER_MAX_MS, Math.floor(2200 / Math.max(1, Math.ceil(total / chunkSize))))
+				Math.min(TYPEWRITER_MAX_MS, Math.round(targetDuration / steps))
 			);
 
 			textEl.classList.add("is-typewriting");
@@ -1545,7 +1552,10 @@
 				const shown = chars.slice(0, Math.min(total, i + chunkSize)).join("");
 				textEl.textContent = shown;
 				this.$body.scrollTop = this.$body.scrollHeight;
-				await this.delay(delayMs);
+				const progress = total > 0 ? Math.min(1, (i + chunkSize) / total) : 1;
+				const centerWeight = 1 - Math.pow(Math.abs(progress - 0.5) * 2, 1.35);
+				const stepDelay = Math.round(delayMs * (0.92 + centerWeight * 0.18));
+				await this.delay(stepDelay);
 			}
 			this.renderAssistantRichText(textEl, finalText, guide);
 			textEl.classList.remove("is-typewriting");
