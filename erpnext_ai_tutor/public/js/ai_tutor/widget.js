@@ -216,11 +216,41 @@
 			return noQuery.replace(/\/+$/, "");
 		}
 
+		getAppRouteParts(pathRaw) {
+			const path = this.normalizeRoutePath(pathRaw);
+			if (!path || !path.startsWith("/app/")) return [];
+			return path
+				.slice(5)
+				.split("/")
+				.map((x) => String(x || "").trim().toLowerCase())
+				.filter(Boolean);
+		}
+
+		normalizeRouteLeafToken(tokenRaw) {
+			let token = String(tokenRaw || "").trim().toLowerCase();
+			if (!token) return "";
+			if (token.endsWith("-list")) token = token.slice(0, -5);
+			return token;
+		}
+
 		isRouteActive(routeRaw) {
 			const targetPath = this.normalizeRoutePath(routeRaw);
 			const currentPath = this.normalizeRoutePath(window.location.pathname || "");
 			if (!targetPath || !currentPath) return false;
-			return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
+			if (currentPath === targetPath || currentPath.startsWith(`${targetPath}/`)) return true;
+
+			const currentParts = this.getAppRouteParts(currentPath);
+			const targetParts = this.getAppRouteParts(targetPath);
+			if (!currentParts.length || !targetParts.length) return false;
+
+			const currentLeaf = this.normalizeRouteLeafToken(currentParts[currentParts.length - 1]);
+			const targetLeaf = this.normalizeRouteLeafToken(targetParts[targetParts.length - 1]);
+			if (!currentLeaf || !targetLeaf || currentLeaf !== targetLeaf) return false;
+
+			// Treat canonical list aliases as equal:
+			// /app/item  <=> /app/stock/item
+			// /app/item  <=> /app/item-list
+			return currentParts.length === 1 || targetParts.length === 1;
 		}
 
 		isGuideTargetActive(guideRaw) {
