@@ -48,6 +48,9 @@
 					this.cursorPosY = 16 + this.hotspotY;
 					this._soundCtx = null;
 					this._lastTypeSoundAt = 0;
+					this._typingAudioTemplate = null;
+					this._activeTypingNodes = new Set();
+					this._typingAudioUrl = "/assets/erpnext_ai_tutor/sounds/keyboard01.ogg?v=79";
 				}
 
 			setRunOptions(opts = {}) {
@@ -104,8 +107,8 @@
 			};
 		}
 
-		createLayer() {
-			if (this.$layer && document.body.contains(this.$layer)) return;
+			createLayer() {
+				if (this.$layer && document.body.contains(this.$layer)) return;
 			this.$layer = document.createElement("div");
 			this.$layer.className = "erpnext-ai-tutor-guide-layer";
 
@@ -113,25 +116,41 @@
 			this.$cursor.className = "erpnext-ai-tutor-guide-cursor";
 
 			this.$layer.append(this.$cursor);
-			document.body.appendChild(this.$layer);
-			this.cursorPosX = 16 + this.hotspotX;
-			this.cursorPosY = 16 + this.hotspotY;
-		}
-
-		stop() {
-			this.running = false;
-			this.clearPulseTimers();
-			if (this.$layer && this.$layer.parentNode) {
-				this.$layer.parentNode.removeChild(this.$layer);
+				document.body.appendChild(this.$layer);
+				this.cursorPosX = 16 + this.hotspotX;
+				this.cursorPosY = 16 + this.hotspotY;
+				// Warm up short typing sample for lower first-play latency.
+				this.getTypingAudioTemplate();
 			}
+
+			stop() {
+				this.running = false;
+				this.clearPulseTimers();
+				if (this._activeTypingNodes && this._activeTypingNodes.size) {
+					for (const node of Array.from(this._activeTypingNodes)) this.cleanupTypingNode(node);
+				}
+				if (this.$layer && this.$layer.parentNode) {
+					this.$layer.parentNode.removeChild(this.$layer);
+				}
 			this.$layer = null;
 			this.$cursor = null;
 		}
 
-		clearPulseTimers() {
+			clearPulseTimers() {
 			if (!Array.isArray(this._pulseTimers) || !this._pulseTimers.length) return;
 			for (const timer of this._pulseTimers) {
 				window.clearTimeout(timer);
+			}
+
+			cleanupTypingNode(audio) {
+				if (!audio) return;
+				try {
+					audio.pause();
+				} catch {
+					// ignore
+				}
+				audio.src = "";
+				this._activeTypingNodes.delete(audio);
 			}
 			this._pulseTimers = [];
 		}
@@ -180,12 +199,40 @@
 				this.playTone({ freq: 520, duration: 0.03, gain: 0.028, type: "triangle" });
 			}
 
+			getTypingAudioTemplate() {
+				try {
+					if (this._typingAudioTemplate) return this._typingAudioTemplate;
+					const audio = new Audio(this._typingAudioUrl);
+					audio.preload = "auto";
+					this._typingAudioTemplate = audio;
+					return audio;
+				} catch {
+					return null;
+				}
+			}
+
 			playTypingSound() {
 				const now = Date.now();
-				if (now - this._lastTypeSoundAt < 14) return;
+				if (now - this._lastTypeSoundAt < 28) return;
 				this._lastTypeSoundAt = now;
-				const jitter = (Math.random() - 0.5) * 34;
-				this.playTone({ freq: 760 + jitter, duration: 0.02, gain: 0.012, type: "square" });
+				const template = this.getTypingAudioTemplate();
+				if (template && this._activeTypingNodes.size < 5) {
+					try {
+						const node = template.cloneNode(true);
+						node.volume = 0.12;
+						node.playbackRate = 1.16;
+						this._activeTypingNodes.add(node);
+						const cleanup = () => this.cleanupTypingNode(node);
+						node.addEventListener("ended", cleanup, { once: true });
+						node.play().catch(cleanup);
+						window.setTimeout(cleanup, 120);
+						return;
+					} catch {
+						// fallback below
+					}
+				}
+				const jitter = (Math.random() - 0.5) * 28;
+				this.playTone({ freq: 740 + jitter, duration: 0.018, gain: 0.01, type: "square" });
 			}
 
 		async waitFor(getter, timeoutMs = 4200, intervalMs = 120) {
