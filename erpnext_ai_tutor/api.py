@@ -157,6 +157,39 @@ def plan_tutorial_fields(doctype: str, stage: str = "open_and_fill_basic", field
 
 
 @frappe.whitelist()
+def get_link_demo_value(doctype: str, hint: str = "") -> Dict[str, Any]:
+	"""Return a safe existing record name for Link field demo fill."""
+	target_doctype = str(doctype or "").strip()
+	if not target_doctype:
+		return {"ok": False, "value": ""}
+	if not frappe.db.exists("DocType", target_doctype):
+		return {"ok": False, "value": ""}
+	if not frappe.has_permission(target_doctype, "read"):
+		return {"ok": False, "value": ""}
+
+	query = str(hint or "").strip()
+	rows: List[Dict[str, Any]] = []
+	if query:
+		rows = frappe.get_all(
+			target_doctype,
+			fields=["name"],
+			filters={"name": ["like", f"%{query}%"]},
+			order_by="modified desc",
+			limit=1,
+		)
+	if not rows:
+		rows = frappe.get_all(
+			target_doctype,
+			fields=["name"],
+			order_by="modified desc",
+			limit=1,
+		)
+
+	value = str(rows[0].get("name") or "").strip() if rows else ""
+	return {"ok": bool(value), "value": value}
+
+
+@frappe.whitelist()
 def chat(message: str, context: Any | None = None, history: Any | None = None) -> Dict[str, Any]:
 	"""Chat endpoint used by the Desk widget."""
 	cfg = AITutorSettings.get_config()

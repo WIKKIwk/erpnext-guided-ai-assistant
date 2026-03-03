@@ -89,7 +89,15 @@ def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 		if plan:
 			return plan[:6]
 
-	for f in fields:
+	ordered_fields = sorted(
+		fields,
+		key=lambda row: (
+			0 if _to_bool(row.get("required")) else 1,
+			0 if _as_text(row.get("fieldtype")).lower() in {"data", "link", "select"} else 1,
+		),
+	)
+
+	for f in ordered_fields:
 		if len(plan) >= 4:
 			break
 		if _to_bool(f.get("read_only")) or _to_bool(f.get("hidden")):
@@ -110,7 +118,10 @@ def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 				if text and text != "None":
 					choice = text
 					break
-			value = choice or "Demo"
+				value = choice or "Demo"
+		elif fieldtype == "link":
+			# Runtime will try to resolve an existing linked record name.
+			value = ""
 		else:
 			value = f"Demo {label}"
 		plan.append({"fieldname": fieldname, "value": value, "reason": "demo o'rgatish uchun"})
@@ -245,4 +256,3 @@ def plan_tutorial_fields(*, doctype: str, stage: str, fields: Any) -> Tuple[List
 	except Exception:
 		pass
 	return fallback, "fallback"
-
