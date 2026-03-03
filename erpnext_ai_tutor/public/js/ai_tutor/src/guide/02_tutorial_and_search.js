@@ -200,23 +200,86 @@
 				return key;
 			}
 
-			parseFieldOptions(rawOptions) {
-				if (Array.isArray(rawOptions)) {
-					return rawOptions.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 20);
-				}
+				parseFieldOptions(rawOptions) {
+					if (Array.isArray(rawOptions)) {
+						return rawOptions.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 20);
+					}
 				const text = String(rawOptions || "").trim();
 				if (!text) return [];
 				return text
 					.split("\n")
 					.map((x) => String(x || "").trim())
-					.filter(Boolean)
-					.slice(0, 20);
-			}
+						.filter(Boolean)
+						.slice(0, 20);
+				}
 
-				collectPlannerFieldCandidates(doctype) {
-					const out = [];
-					const frm = window.cur_frm;
-				const lower = String(doctype || "").trim().toLowerCase();
+				pickPreferredSelectOption(rawOptions, preferred = []) {
+					const options = this.parseFieldOptions(rawOptions);
+					if (!options.length) return "";
+					const normalize = (v) => String(v || "").trim().toLowerCase();
+					const junkValues = new Set(["", "-", "--", "---", "none", "select", "tanlang", "choose"]);
+					const preferredNorm = Array.isArray(preferred)
+						? preferred.map((x) => normalize(x)).filter(Boolean)
+						: [];
+
+					for (const wanted of preferredNorm) {
+						const found = options.find((opt) => normalize(opt) === wanted);
+						if (found) return found;
+					}
+					for (const opt of options) {
+						const norm = normalize(opt);
+						if (!norm || junkValues.has(norm)) continue;
+						if (/^(please\s+select|tanlang|select\b)/i.test(opt)) continue;
+						return opt;
+					}
+					return options[0] || "";
+				}
+
+				isTutorialNoiseField(doctype, df, fieldname = "", label = "") {
+					const row = df && typeof df === "object" ? df : {};
+					if (Boolean(row?.reqd) || Boolean(row?.required)) return false;
+					if (Boolean(row?.read_only) || Boolean(row?.readOnly) || Boolean(row?.hidden)) return true;
+
+					const name = String(fieldname || row?.fieldname || "").trim().toLowerCase();
+					const title = String(label || row?.label || "").trim().toLowerCase();
+					if (!name && !title) return false;
+
+					const metaNames = new Set([
+						"name",
+						"owner",
+						"creation",
+						"modified",
+						"modified_by",
+						"idx",
+						"docstatus",
+						"amended_from",
+						"_assign",
+						"_comments",
+						"_liked_by",
+						"_seen",
+						"_user_tags",
+						"naming_series",
+					]);
+					if (metaNames.has(name)) return true;
+					if (/(scan|barcode|last_scanned|posting_date|posting_time|amended|workflow|_seen|_assign)/i.test(name)) {
+						return true;
+					}
+					if (/(barcode|scan|last scanned|posting date|posting time)/i.test(title)) {
+						return true;
+					}
+
+					const dt = String(doctype || "").trim().toLowerCase();
+					if (dt === "stock entry") {
+						const stockNoise = new Set(["scan_barcode", "last_scanned_warehouse"]);
+						if (stockNoise.has(name)) return true;
+					}
+					return false;
+				}
+
+					collectPlannerFieldCandidates(doctype) {
+						const out = [];
+						const frm = window.cur_frm;
+					const lower = String(doctype || "").trim().toLowerCase();
 				if (!frm || String(frm.doctype || "").trim().toLowerCase() !== lower) return out;
 				const metaFields = Array.isArray(frm.meta?.fields) ? frm.meta.fields : [];
 				for (const df of metaFields) {
@@ -236,17 +299,20 @@
 							"Table",
 							"Table MultiSelect",
 						].includes(fieldtype)
-					) {
-						continue;
-					}
-					const currentValue = frm.doc ? frm.doc[fieldname] : null;
-						out.push({
-							fieldname,
-							label: String(df.label || fieldname).trim(),
-							fieldtype,
-							required: Boolean(df.reqd),
-							read_only: Boolean(df.read_only),
-							hidden: Boolean(df.hidden),
+						) {
+							continue;
+						}
+						const label = String(df.label || fieldname).trim();
+						if (this.isTutorialNoiseField(doctype, df, fieldname, label)) continue;
+						const currentValue = frm.doc ? frm.doc[fieldname] : null;
+						if (this.isFieldValueFilled(df, currentValue) && !this.isControlInvalid(fieldname)) continue;
+							out.push({
+								fieldname,
+								label,
+								fieldtype,
+								required: Boolean(df.reqd),
+								read_only: Boolean(df.read_only),
+								hidden: Boolean(df.hidden),
 							current_value:
 								currentValue === null || currentValue === undefined ? "" : String(currentValue).trim(),
 							options:
@@ -346,10 +412,12 @@
 				defaultDemoValueForField(df) {
 					const fieldtype = String(df?.fieldtype || "").trim();
 					const label = String(df?.label || df?.fieldname || "Field").trim();
+					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
 					if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) return "1";
 					if (fieldtype === "Select") {
-						const options = this.parseFieldOptions(df?.options);
-						return options[0] || "Demo";
+						const preferred =
+							fieldname === "stock_entry_type" ? ["Material Receipt", "Material Transfer", "Material Issue"] : [];
+						return this.pickPreferredSelectOption(df?.options, preferred) || "Demo";
 					}
 					if (fieldtype === "Link") return "";
 					return `Demo ${label}`;
@@ -358,28 +426,31 @@
 				buildMergedFieldPlans(doctype, stage, plannedRows = [], fallbackPlans = []) {
 					const merged = [];
 					const seen = new Set();
-					const append = (row, source) => {
+					const append = (row, source, opts = {}) => {
 						if (!row || typeof row !== "object") return;
 						const fieldname = String(row.fieldname || "").trim();
 						if (!fieldname || seen.has(fieldname)) return;
 						const df = this.getFieldMeta(fieldname);
 						if (!df) return;
 						if (Boolean(df.read_only) || Boolean(df.hidden)) return;
+						const label = String(row.label || df.label || fieldname).trim();
+						const force = Boolean(opts?.force);
+						if (!force && this.isTutorialNoiseField(doctype, df, fieldname, label)) return;
+						if (!force && source === "ai" && String(df?.fieldtype || "").trim() === "Link" && !Boolean(df?.reqd)) {
+							return;
+						}
 						const value =
 							row.value !== undefined && row.value !== null
 								? String(row.value)
 								: this.defaultDemoValueForField(df);
 						merged.push({
 							fieldname,
-							label: String(row.label || df.label || fieldname).trim(),
+							label,
 							value,
 							reason: String(row.reason || (source === "required" ? "majburiy maydon" : "demo o'rgatish uchun")).trim(),
 						});
 						seen.add(fieldname);
 					};
-
-					for (const row of Array.isArray(plannedRows) ? plannedRows : []) append(row, "ai");
-					for (const row of Array.isArray(fallbackPlans) ? fallbackPlans : []) append(row, "fallback");
 
 					const requiredMissing = this.collectMissingRequiredFields(doctype);
 					for (const req of requiredMissing) {
@@ -390,11 +461,14 @@
 								value: this.defaultDemoValueForField(req),
 								reason: "majburiy maydonni to'ldirish uchun",
 							},
-							"required"
+							"required",
+							{ force: true }
 						);
 					}
+					for (const row of Array.isArray(plannedRows) ? plannedRows : []) append(row, "ai");
+					for (const row of Array.isArray(fallbackPlans) ? fallbackPlans : []) append(row, "fallback");
 
-					return stage === "fill_more" ? merged.slice(0, 8) : merged.slice(0, 10);
+					return stage === "fill_more" ? merged.slice(0, 8) : merged.slice(0, 6);
 				}
 
 				async fetchLinkDemoValue(linkDoctype, hint = "") {
@@ -422,6 +496,7 @@
 
 				async resolvePlanValue(df, rawValue) {
 					const fieldtype = String(df?.fieldtype || "").trim();
+					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
 					if (fieldtype === "Link") {
 						const linkDoctype = String(df?.options || "").trim();
 						const hint = String(rawValue || "").trim();
@@ -431,7 +506,9 @@
 						const options = this.parseFieldOptions(df?.options);
 						const wanted = String(rawValue || "").trim();
 						if (wanted && options.includes(wanted)) return wanted;
-						return options[0] || wanted || "Demo";
+						const preferred =
+							fieldname === "stock_entry_type" ? ["Material Receipt", "Material Transfer", "Material Issue"] : [];
+						return this.pickPreferredSelectOption(options, preferred) || wanted || "Demo";
 					}
 					if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) {
 						const wanted = String(rawValue || "").trim();
@@ -485,10 +562,10 @@
 			}
 		}
 
-			getFormFieldSamplePlans(doctype, stage = "open_and_fill_basic") {
-				const dt = String(doctype || "").trim();
-				const lower = dt.toLowerCase();
-				if (lower === "item") {
+				getFormFieldSamplePlans(doctype, stage = "open_and_fill_basic") {
+					const dt = String(doctype || "").trim();
+					const lower = dt.toLowerCase();
+					if (lower === "item") {
 					const base = [
 						{
 							fieldname: "item_code",
@@ -524,38 +601,49 @@
 								reason: "izoh maydonini ham amalda ko'rsatish uchun",
 							},
 						];
+						}
+						return base;
 					}
-					return base;
-				}
+					if (lower === "stock entry") {
+						return [
+							{
+								fieldname: "stock_entry_type",
+								label: "Stock Entry Type",
+								value: "Material Receipt",
+								reason: "ombor amaliyoti turi tanlanmasa qolgan qadamlar ishonchli ishlamaydi",
+							},
+						];
+					}
 
-				const frm = window.cur_frm;
-				if (!frm || String(frm.doctype || "").trim().toLowerCase() !== lower) return [];
-				const fields = Array.isArray(frm.meta?.fields) ? frm.meta.fields : [];
-				const plans = [];
+					const frm = window.cur_frm;
+					if (!frm || String(frm.doctype || "").trim().toLowerCase() !== lower) return [];
+					const fields = Array.isArray(frm.meta?.fields) ? frm.meta.fields : [];
+					const plans = [];
 				for (const df of fields) {
-					if (!df || !df.fieldname) continue;
-					if (df.hidden || df.read_only) continue;
-					const ft = String(df.fieldtype || "").trim();
-					if (!["Data", "Small Text", "Text", "Int", "Float", "Currency", "Select"].includes(ft)) continue;
-					const fieldname = String(df.fieldname || "").trim();
-					if (!fieldname || fieldname === "naming_series") continue;
-					const currentVal = frm.doc ? frm.doc[fieldname] : null;
-					if (currentVal !== null && currentVal !== undefined && String(currentVal).trim()) continue;
-					let sample = "Demo";
-					if (ft === "Int" || ft === "Float" || ft === "Currency") sample = "1";
-					else if (ft === "Select") {
-						const opts = this.parseFieldOptions(df.options);
-						sample = opts[0] || "Demo";
-					} else {
-						sample = `Demo ${String(df.label || fieldname).trim()}`;
-					}
-					plans.push({
-						fieldname,
-						label: String(df.label || fieldname).trim(),
-						value: sample,
-						reason: "demo ko'rsatish uchun",
-					});
-					if (plans.length >= 4) break;
+						if (!df || !df.fieldname) continue;
+						if (df.hidden || df.read_only) continue;
+						const ft = String(df.fieldtype || "").trim();
+						if (!["Data", "Small Text", "Text", "Int", "Float", "Currency", "Select"].includes(ft)) continue;
+						const fieldname = String(df.fieldname || "").trim();
+						if (!fieldname || fieldname === "naming_series") continue;
+						const label = String(df.label || fieldname).trim();
+						if (this.isTutorialNoiseField(doctype, df, fieldname, label)) continue;
+						const currentVal = frm.doc ? frm.doc[fieldname] : null;
+						if (currentVal !== null && currentVal !== undefined && String(currentVal).trim()) continue;
+						let sample = "Demo";
+						if (ft === "Int" || ft === "Float" || ft === "Currency") sample = "1";
+						else if (ft === "Select") {
+							sample = this.pickPreferredSelectOption(df.options) || "Demo";
+						} else {
+							sample = `Demo ${label}`;
+						}
+						plans.push({
+							fieldname,
+							label,
+							value: sample,
+							reason: "demo ko'rsatish uchun",
+						});
+						if (plans.length >= 4) break;
 				}
 				return stage === "fill_more" ? plans.slice(1) : plans;
 			}
@@ -566,6 +654,7 @@
 					let filled = 0;
 					const filledLabels = [];
 					const blockedLinkHints = [];
+					const failedRequired = new Set();
 					for (const plan of plans) {
 						if (!this.running) break;
 						const fieldname = String(plan?.fieldname || "").trim();
@@ -573,8 +662,9 @@
 						const df = this.getFieldMeta(fieldname);
 						if (!df) continue;
 						const label = String(plan?.label || this.getFieldLabel(fieldname) || fieldname).trim();
+						if (this.isTutorialNoiseField(doctype, df, fieldname, label) && !Boolean(df?.reqd)) continue;
 						const reason = String(plan?.reason || "demo maqsadida").trim();
-						const input = this.findFieldInput(fieldname, { allowHidden: true });
+						const input = this.findFieldInput(fieldname, { allowHidden: false });
 						if (!input) {
 							this.emitProgress(`⚠️ **${label}** maydoni topilmadi, keyingi qadamga o'tdim.`);
 							continue;
@@ -620,6 +710,65 @@
 						} else {
 							this.emitProgress(`⚠️ **${label}** qiymati form tomonidan qabul qilinmadi, qayta tekshirish kerak.`);
 						}
+					}
+
+					// Dynamic required-field sweep:
+					// after each successful fill, ERPNext may reveal new required fields.
+					for (let round = 0; round < 3 && this.running; round++) {
+						const missingNow = this.collectMissingRequiredFields(doctype);
+						if (!missingNow.length) break;
+						let roundProgress = false;
+						for (const req of missingNow) {
+							if (!this.running) break;
+							const fieldname = String(req?.fieldname || "").trim();
+							if (!fieldname || failedRequired.has(fieldname)) continue;
+							const df = this.getFieldMeta(fieldname);
+							if (!df) {
+								failedRequired.add(fieldname);
+								continue;
+							}
+							const label = String(req?.label || this.getFieldLabel(fieldname) || fieldname).trim();
+							const input = this.findFieldInput(fieldname, { allowHidden: false });
+							if (!input) {
+								failedRequired.add(fieldname);
+								continue;
+							}
+							const currentVal = this.readFieldValue(fieldname);
+							if (this.isFieldValueFilled(df, currentVal) && !this.isControlInvalid(fieldname)) continue;
+
+							const valueToType = await this.resolvePlanValue(df, this.defaultDemoValueForField(df));
+							if (!this.isFieldValueFilled(df, valueToType)) {
+								const linkDoctype = String(df?.options || "").trim();
+								if (String(df?.fieldtype || "").trim() === "Link" && linkDoctype) {
+									blockedLinkHints.push(`**${label}** (Link: ${linkDoctype})`);
+								}
+								failedRequired.add(fieldname);
+								continue;
+							}
+
+							const focused = await this.focusElement(input, `Majburiy **${label}** maydonini to'ldiramiz.`, {
+								click: true,
+								duration_ms: 250,
+								pre_click_pause_ms: 90,
+							});
+							if (!focused) {
+								failedRequired.add(fieldname);
+								continue;
+							}
+							const ok = await this.typeIntoInput(input, valueToType);
+							await this.sleep(120);
+							const afterVal = this.readFieldValue(fieldname);
+							const reallyFilled = ok && this.isFieldValueFilled(df, afterVal) && !this.isControlInvalid(fieldname);
+							if (reallyFilled) {
+								filled += 1;
+								roundProgress = true;
+								if (!filledLabels.includes(label)) filledLabels.push(label);
+								this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
+							} else {
+								failedRequired.add(fieldname);
+							}
+						}
+						if (!roundProgress) break;
 					}
 					const missingRequired = this.collectMissingRequiredFields(doctype);
 					return {

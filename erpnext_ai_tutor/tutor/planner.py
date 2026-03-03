@@ -62,6 +62,60 @@ def _normalize_fields(fields: Any) -> List[Dict[str, Any]]:
 	return out
 
 
+def _is_noise_field(doctype: str, row: Dict[str, Any]) -> bool:
+	if _to_bool(row.get("required")):
+		return False
+	name = _as_text(row.get("fieldname")).lower()
+	label = _as_text(row.get("label")).lower()
+	if not name and not label:
+		return False
+	meta_fields = {
+		"name",
+		"owner",
+		"creation",
+		"modified",
+		"modified_by",
+		"idx",
+		"docstatus",
+		"amended_from",
+		"_assign",
+		"_comments",
+		"_liked_by",
+		"_seen",
+		"_user_tags",
+		"naming_series",
+	}
+	if name in meta_fields:
+		return True
+	if re.search(r"(scan|barcode|last_scanned|posting_date|posting_time|workflow)", name):
+		return True
+	if re.search(r"(scan|barcode|last scanned|posting date|posting time)", label):
+		return True
+	if _as_text(doctype).lower() == "stock entry" and name in {"scan_barcode", "last_scanned_warehouse"}:
+		return True
+	return False
+
+
+def _pick_select_option(options: Any, preferred: List[str] | None = None) -> str:
+	opts = [str(x or "").strip() for x in (options if isinstance(options, list) else []) if str(x or "").strip()]
+	if not opts:
+		return ""
+	norm = lambda v: str(v or "").strip().lower()
+	pref_norm = [norm(x) for x in (preferred or []) if norm(x)]
+	for wanted in pref_norm:
+		for opt in opts:
+			if norm(opt) == wanted:
+				return opt
+	for opt in opts:
+		text = norm(opt)
+		if text in {"", "-", "--", "---", "none", "select", "tanlang", "choose"}:
+			continue
+		if re.match(r"^(please\s+select|select\b|tanlang)", opt, flags=re.IGNORECASE):
+			continue
+		return opt
+	return opts[0]
+
+
 def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> List[Dict[str, str]]:
 	field_map = {str(f.get("fieldname") or "").strip(): f for f in fields}
 	lower_dt = _as_text(doctype).lower()
@@ -88,6 +142,10 @@ def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 			add("stock_uom", "Nos", "ombor birligini belgilash uchun")
 		if plan:
 			return plan[:6]
+	if lower_dt == "stock entry":
+		add("stock_entry_type", "Material Receipt", "ombor amaliyoti turi tanlanmasa qolgan qadamlar barqaror ishlamaydi")
+		if plan:
+			return plan[:6]
 
 	ordered_fields = sorted(
 		fields,
@@ -104,6 +162,8 @@ def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 			continue
 		if _as_text(f.get("current_value")):
 			continue
+		if _is_noise_field(doctype, f):
+			continue
 		fieldname = _as_text(f.get("fieldname"))
 		fieldtype = _as_text(f.get("fieldtype")).lower()
 		label = _as_text(f.get("label")) or fieldname
@@ -112,12 +172,8 @@ def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 			value = "1"
 		elif fieldtype == "select":
 			options = f.get("options") if isinstance(f.get("options"), list) else []
-			choice = ""
-			for opt in options:
-				text = _as_text(opt)
-				if text and text != "None":
-					choice = text
-					break
+			preferred = ["Material Receipt", "Material Transfer", "Material Issue"] if fieldname == "stock_entry_type" else []
+			choice = _pick_select_option(options, preferred=preferred)
 			value = choice or "Demo"
 		elif fieldtype == "link":
 			# Runtime will try to resolve an existing linked record name.
@@ -153,7 +209,7 @@ def _extract_json_payload(text: str) -> Any:
 	return None
 
 
-def _normalize_plan(raw_plan: Any, fields: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+def _normalize_plan(raw_plan: Any, fields: List[Dict[str, Any]], doctype: str = "") -> List[Dict[str, str]]:
 	if isinstance(raw_plan, dict):
 		if isinstance(raw_plan.get("plan"), list):
 			raw_plan = raw_plan.get("plan")
@@ -178,6 +234,8 @@ def _normalize_plan(raw_plan: Any, fields: List[Dict[str, Any]]) -> List[Dict[st
 			continue
 		if _as_text(field.get("current_value")):
 			continue
+		if _is_noise_field(doctype, field):
+			continue
 
 		value = _as_text(row.get("value"))
 		reason = _clip(_as_text(row.get("reason")) or "demo ko'rsatish uchun", 180)
@@ -187,12 +245,8 @@ def _normalize_plan(raw_plan: Any, fields: List[Dict[str, Any]]) -> List[Dict[st
 		if fieldtype == "select":
 			options = field.get("options") if isinstance(field.get("options"), list) else []
 			if options and value not in options:
-				fallback_opt = ""
-				for opt in options:
-					text = _as_text(opt)
-					if text and text != "None":
-						fallback_opt = text
-						break
+				preferred = ["Material Receipt", "Material Transfer", "Material Issue"] if fieldname == "stock_entry_type" else []
+				fallback_opt = _pick_select_option(options, preferred=preferred)
 				value = fallback_opt or value or "Demo"
 		if not value:
 			value = "Demo"
@@ -240,7 +294,7 @@ def _plan_with_llm(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 		max_tokens=900,
 	)
 	parsed = _extract_json_payload(resp)
-	return _normalize_plan(parsed, fields)
+	return _normalize_plan(parsed, fields, doctype=doctype)
 
 
 def plan_tutorial_fields(*, doctype: str, stage: str, fields: Any) -> Tuple[List[Dict[str, str]], str]:
