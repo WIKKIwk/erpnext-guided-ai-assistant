@@ -409,6 +409,24 @@
 					return out;
 				}
 
+				normalizeStockEntryTypePreference(value) {
+					const raw = String(value || "").trim().toLowerCase();
+					if (!raw) return "";
+					if (raw === "material issue" || raw === "issue") return "Material Issue";
+					if (raw === "material receipt" || raw === "receipt") return "Material Receipt";
+					if (raw === "material transfer" || raw === "transfer") return "Material Transfer";
+					return "";
+				}
+
+				getStockEntryTypePreferredOrder(explicitPreference = "") {
+					const base = ["Material Receipt", "Material Transfer", "Material Issue"];
+					const pref = this.normalizeStockEntryTypePreference(
+						explicitPreference || this._tutorialStockEntryTypePreference
+					);
+					if (!pref) return base;
+					return [pref, ...base.filter((x) => x !== pref)];
+				}
+
 				defaultDemoValueForField(df) {
 					const fieldtype = String(df?.fieldtype || "").trim();
 					const label = String(df?.label || df?.fieldname || "Field").trim();
@@ -417,7 +435,7 @@
 					if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) return "1";
 					if (fieldtype === "Select") {
 						const preferred =
-							fieldname === "stock_entry_type" ? ["Material Receipt", "Material Transfer", "Material Issue"] : [];
+							fieldname === "stock_entry_type" ? this.getStockEntryTypePreferredOrder() : [];
 						return this.pickPreferredSelectOption(df?.options, preferred) || "Demo";
 					}
 					if (fieldtype === "Link") return "";
@@ -525,7 +543,7 @@
 					const fieldtype = String(df?.fieldtype || "").trim();
 					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
 					if (fieldname === "stock_entry_type") {
-						return await this.resolveSafeStockEntryType(rawValue);
+						return await this.resolveSafeStockEntryType(rawValue, { preferTutorial: true });
 					}
 					if (this.isEmailField(df)) {
 						const wanted = String(rawValue || "").trim();
@@ -540,8 +558,7 @@
 						const options = this.parseFieldOptions(df?.options);
 						const wanted = String(rawValue || "").trim();
 						if (wanted && options.includes(wanted)) return wanted;
-						const preferred =
-							fieldname === "stock_entry_type" ? ["Material Receipt", "Material Transfer", "Material Issue"] : [];
+						const preferred = fieldname === "stock_entry_type" ? this.getStockEntryTypePreferredOrder() : [];
 						return this.pickPreferredSelectOption(options, preferred) || wanted || "Demo";
 					}
 					if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) {
@@ -551,15 +568,21 @@
 					return String(rawValue || "").trim();
 				}
 
-				async resolveSafeStockEntryType(rawValue) {
-					const preferred = ["Material Receipt", "Material Transfer", "Material Issue"];
-					const wanted = String(rawValue || "").trim().toLowerCase();
+				async resolveSafeStockEntryType(rawValue, opts = {}) {
+					const preferred = this.getStockEntryTypePreferredOrder(
+						opts?.preferTutorial ? this._tutorialStockEntryTypePreference : ""
+					);
+					const tutorialWanted = this.normalizeStockEntryTypePreference(
+						opts?.preferTutorial ? this._tutorialStockEntryTypePreference : ""
+					);
+					if (tutorialWanted) {
+						const matchedTutorial = await this.fetchLinkDemoValue("Stock Entry Type", tutorialWanted);
+						if (matchedTutorial) return matchedTutorial;
+					}
+					const wanted = this.normalizeStockEntryTypePreference(rawValue);
 					if (wanted) {
-						const exact = preferred.find((x) => x.toLowerCase() === wanted);
-						if (exact) {
-							const matched = await this.fetchLinkDemoValue("Stock Entry Type", exact);
-							if (matched) return matched;
-						}
+						const matchedWanted = await this.fetchLinkDemoValue("Stock Entry Type", wanted);
+						if (matchedWanted) return matchedWanted;
 					}
 					for (const option of preferred) {
 						const matched = await this.fetchLinkDemoValue("Stock Entry Type", option);
@@ -571,11 +594,16 @@
 				async requestAIFieldPlan(doctype, stage) {
 					const fields = this.collectPlannerFieldCandidates(doctype);
 					if (!fields.length) return { plan: [], source: "none" };
+					const stockEntryTypePreference =
+						String(doctype || "").trim().toLowerCase() === "stock entry"
+							? this.normalizeStockEntryTypePreference(this._tutorialStockEntryTypePreference)
+							: "";
 				try {
 					const res = await frappe.call("erpnext_ai_tutor.api.plan_tutorial_fields", {
 						doctype: String(doctype || "").trim(),
 						stage: String(stage || "open_and_fill_basic").trim().toLowerCase(),
 						fields,
+						stock_entry_type_preference: stockEntryTypePreference,
 					});
 					const msg = res?.message || {};
 					const plan = Array.isArray(msg?.plan) ? msg.plan : [];
@@ -666,7 +694,7 @@
 							{
 								fieldname: "stock_entry_type",
 								label: "Stock Entry Type",
-								value: "Material Receipt",
+								value: this.getStockEntryTypePreferredOrder()[0],
 								reason: "ombor amaliyoti turi tanlanmasa qolgan qadamlar ishonchli ishlamaydi",
 							},
 						];
@@ -1082,6 +1110,10 @@
 			async runCreateRecordTutorial(guide) {
 				if (!this.isCreateTutorial(guide)) return { ok: true, reached_target: true, message: "" };
 				const doctype = this.getTutorialDoctype(guide);
+				this._tutorialStockEntryTypePreference =
+					String(doctype || "").trim().toLowerCase() === "stock entry"
+						? this.normalizeStockEntryTypePreference(guide?.tutorial?.stock_entry_type_preference)
+						: "";
 				const stage = String(guide?.tutorial?.stage || "open_and_fill_basic").trim().toLowerCase();
 				this.emitProgress(`🚀 **${doctype}** bo'yicha amaliy ko'rsatishni boshladim.`);
 

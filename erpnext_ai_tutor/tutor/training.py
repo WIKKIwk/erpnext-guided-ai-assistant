@@ -52,6 +52,7 @@ ACTION_KEYWORDS_RE = re.compile(
 
 ALLOWED_STAGES = {"open_and_fill_basic", "fill_more", "show_save_only"}
 ALLOWED_PENDING = {"", "action", "target"}
+ALLOWED_STOCK_ENTRY_TYPES = {"Material Issue", "Material Receipt", "Material Transfer"}
 AI_TARGET_ALIASES = {
 	"user": "User",
 	"users": "User",
@@ -326,6 +327,55 @@ def _normalize_menu_path(menu_path: Any, doctype: str) -> List[str]:
 	return path[:6]
 
 
+def _extract_stock_entry_type_preference(user_message: str, doctype: str = "") -> str:
+	text = str(user_message or "").strip().lower()
+	if not text:
+		return ""
+	if str(doctype or "").strip().lower() not in {"", "stock entry"}:
+		return ""
+	patterns: List[tuple[str, List[str]]] = [
+		(
+			"Material Issue",
+			[
+				r"\bmaterial[\s_-]*issue\b",
+				r"\bissue\s+bilan\b",
+				r"\bchiqim\b",
+				r"\bombordan?\s+chiq",
+			],
+		),
+		(
+			"Material Receipt",
+			[
+				r"\bmaterial[\s_-]*receipt\b",
+				r"\breceipt\b",
+				r"\bkirim\b",
+				r"\bqabul\b",
+			],
+		),
+		(
+			"Material Transfer",
+			[
+				r"\bmaterial[\s_-]*transfer\b",
+				r"\btransfer\b",
+				r"\bo['’]?tkaz",
+				r"\bko['’]?chir",
+			],
+		),
+	]
+	matches: List[tuple[int, str]] = []
+	for canonical, regexes in patterns:
+		for raw in regexes:
+			m = re.search(raw, text, flags=re.IGNORECASE)
+			if m:
+				matches.append((int(m.start()), canonical))
+				break
+	if not matches:
+		return ""
+	matches.sort(key=lambda x: x[0])
+	chosen = str(matches[0][1] or "").strip()
+	return chosen if chosen in ALLOWED_STOCK_ENTRY_TYPES else ""
+
+
 def _target_from_doctype(doctype: str) -> Dict[str, Any]:
 	name = str(doctype or "").strip()
 	if not name or not _is_real_doctype(name):
@@ -410,36 +460,60 @@ def _extract_state(ctx: Dict[str, Any]) -> Dict[str, Any]:
 	action = str(state_raw.get("action") or "").strip().lower()
 	if action != "create_record":
 		action = ""
+	stock_entry_type_preference = str(state_raw.get("stock_entry_type_preference") or "").strip()
+	if stock_entry_type_preference not in ALLOWED_STOCK_ENTRY_TYPES:
+		stock_entry_type_preference = ""
 	return {
 		"pending": pending,
 		"stage": stage,
 		"doctype": doctype,
 		"action": action,
+		"stock_entry_type_preference": stock_entry_type_preference,
 	}
 
 
-def _build_guide_payload(doctype: str, route: str, menu_path: List[str], stage: str) -> Dict[str, Any]:
+def _build_guide_payload(
+	doctype: str,
+	route: str,
+	menu_path: List[str],
+	stage: str,
+	stock_entry_type_preference: str = "",
+) -> Dict[str, Any]:
 	clean_stage = stage if stage in ALLOWED_STAGES else "open_and_fill_basic"
+	tutorial: Dict[str, Any] = {
+		"mode": "create_record",
+		"stage": clean_stage,
+		"doctype": doctype,
+	}
+	if str(doctype or "").strip().lower() == "stock entry":
+		pref = str(stock_entry_type_preference or "").strip()
+		if pref in ALLOWED_STOCK_ENTRY_TYPES:
+			tutorial["stock_entry_type_preference"] = pref
 	return {
 		"type": "navigation",
 		"route": str(route or "").strip(),
 		"target_label": doctype,
 		"menu_path": _normalize_menu_path(menu_path, doctype),
-		"tutorial": {
-			"mode": "create_record",
-			"stage": clean_stage,
-			"doctype": doctype,
-		},
+		"tutorial": tutorial,
 	}
 
 
-def _coach_state(doctype: str, stage: str, pending: str = "") -> Dict[str, Any]:
-	return {
+def _coach_state(
+	doctype: str,
+	stage: str,
+	pending: str = "",
+	stock_entry_type_preference: str = "",
+) -> Dict[str, Any]:
+	state = {
 		"action": "create_record",
 		"doctype": str(doctype or "").strip(),
 		"stage": stage if stage in ALLOWED_STAGES else "open_and_fill_basic",
 		"pending": pending if pending in ALLOWED_PENDING else "",
 	}
+	pref = str(stock_entry_type_preference or "").strip()
+	if str(doctype or "").strip().lower() == "stock entry" and pref in ALLOWED_STOCK_ENTRY_TYPES:
+		state["stock_entry_type_preference"] = pref
+	return state
 
 
 def _action_clarify_reply(lang: str) -> str:
@@ -559,6 +633,7 @@ def maybe_handle_training_flow(
 	pending = str(state.get("pending") or "")
 	state_doctype = str(state.get("doctype") or "")
 	state_action = str(state.get("action") or "")
+	state_stock_type = str(state.get("stock_entry_type_preference") or "")
 	intent = _infer_training_intent_with_ai(text, has_active_tutorial=bool(state_action and state_doctype))
 	intent_action = str(intent.get("action") or "other").strip().lower()
 	intent_doctype = str(intent.get("doctype") or "").strip()
@@ -566,6 +641,16 @@ def maybe_handle_training_flow(
 	create_requested = bool(CREATE_ACTION_RE.search(text)) or practical_tutorial_requested or intent_action == "create_record"
 	continue_requested = bool(CONTINUE_ACTION_RE.search(text)) or intent_action == "continue"
 	show_save_requested = bool(SHOW_SAVE_RE.search(text)) or intent_action == "show_save"
+	requested_stock_type = _extract_stock_entry_type_preference(text, state_doctype or intent_doctype)
+
+	def _pick_stock_entry_type(doctype_name: str) -> str:
+		if str(doctype_name or "").strip().lower() != "stock entry":
+			return ""
+		if requested_stock_type:
+			return requested_stock_type
+		if state_stock_type in ALLOWED_STOCK_ENTRY_TYPES:
+			return state_stock_type
+		return ""
 
 	if pending == "action":
 		target_seed = intent_doctype or text
@@ -578,28 +663,38 @@ def maybe_handle_training_flow(
 				route=str(target.get("route") or ""),
 				menu_path=target.get("menu_path") or [],
 				stage="open_and_fill_basic",
+				stock_entry_type_preference=_pick_stock_entry_type(doctype),
 			)
 			return _build_training_reply(
 				reply=reply,
 				guide=guide,
-				tutor_state=_coach_state(doctype, "open_and_fill_basic"),
+				tutor_state=_coach_state(
+					doctype,
+					"open_and_fill_basic",
+					stock_entry_type_preference=_pick_stock_entry_type(doctype),
+				),
 			)
-		if create_requested:
-			target = _resolve_doctype_target(target_seed, ctx, allow_context_fallback=not bool(intent_doctype))
-			if target:
-				doctype = str(target.get("doctype") or "").strip()
-				reply = _start_tutorial_reply(lang, doctype)
-				guide = _build_guide_payload(
-					doctype=doctype,
-					route=str(target.get("route") or ""),
-					menu_path=target.get("menu_path") or [],
-					stage="open_and_fill_basic",
-				)
-				return _build_training_reply(
-					reply=reply,
-					guide=guide,
-					tutor_state=_coach_state(doctype, "open_and_fill_basic"),
-				)
+			if create_requested:
+				target = _resolve_doctype_target(target_seed, ctx, allow_context_fallback=not bool(intent_doctype))
+				if target:
+					doctype = str(target.get("doctype") or "").strip()
+					reply = _start_tutorial_reply(lang, doctype)
+					guide = _build_guide_payload(
+						doctype=doctype,
+						route=str(target.get("route") or ""),
+						menu_path=target.get("menu_path") or [],
+						stage="open_and_fill_basic",
+						stock_entry_type_preference=_pick_stock_entry_type(doctype),
+					)
+					return _build_training_reply(
+						reply=reply,
+						guide=guide,
+						tutor_state=_coach_state(
+							doctype,
+							"open_and_fill_basic",
+							stock_entry_type_preference=_pick_stock_entry_type(doctype),
+						),
+					)
 			return _build_training_reply(
 				reply=_target_clarify_reply(lang),
 				tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
@@ -623,11 +718,16 @@ def maybe_handle_training_flow(
 			route=str(target.get("route") or ""),
 			menu_path=target.get("menu_path") or [],
 			stage="open_and_fill_basic",
+			stock_entry_type_preference=_pick_stock_entry_type(doctype),
 		)
 		return _build_training_reply(
 			reply=reply,
 			guide=guide,
-			tutor_state=_coach_state(doctype, "open_and_fill_basic"),
+			tutor_state=_coach_state(
+				doctype,
+				"open_and_fill_basic",
+				stock_entry_type_preference=_pick_stock_entry_type(doctype),
+			),
 		)
 
 	if state_action == "create_record" and state_doctype and (continue_requested or show_save_requested):
@@ -637,11 +737,21 @@ def maybe_handle_training_flow(
 		route = str(target.get("route") or f"/app/{_doctype_to_slug(doctype)}")
 		menu_path = target.get("menu_path") or [doctype]
 		reply = _continue_tutorial_reply(lang, doctype, stage)
-		guide = _build_guide_payload(doctype=doctype, route=route, menu_path=menu_path, stage=stage)
+		guide = _build_guide_payload(
+			doctype=doctype,
+			route=route,
+			menu_path=menu_path,
+			stage=stage,
+			stock_entry_type_preference=_pick_stock_entry_type(doctype),
+		)
 		return _build_training_reply(
 			reply=reply,
 			guide=guide,
-			tutor_state=_coach_state(doctype, stage),
+			tutor_state=_coach_state(
+				doctype,
+				stage,
+				stock_entry_type_preference=_pick_stock_entry_type(doctype),
+			),
 		)
 
 	if create_requested or intent_doctype:
@@ -659,11 +769,16 @@ def maybe_handle_training_flow(
 			route=str(target.get("route") or ""),
 			menu_path=target.get("menu_path") or [],
 			stage="open_and_fill_basic",
+			stock_entry_type_preference=_pick_stock_entry_type(doctype),
 		)
 		return _build_training_reply(
 			reply=reply,
 			guide=guide,
-			tutor_state=_coach_state(doctype, "open_and_fill_basic"),
+			tutor_state=_coach_state(
+				doctype,
+				"open_and_fill_basic",
+				stock_entry_type_preference=_pick_stock_entry_type(doctype),
+			),
 		)
 
 	if _needs_action_clarification(text):

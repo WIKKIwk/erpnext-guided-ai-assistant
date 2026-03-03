@@ -203,7 +203,8 @@
 				: "";
 			const tutorialMode = String(guide?.tutorial?.mode || "").trim().toLowerCase();
 			const tutorialStage = String(guide?.tutorial?.stage || "").trim().toLowerCase();
-			return [route, target, path, tutorialMode, tutorialStage].join("|");
+			const stockTypePref = String(guide?.tutorial?.stock_entry_type_preference || "").trim().toLowerCase();
+			return [route, target, path, tutorialMode, tutorialStage, stockTypePref].join("|");
 		}
 
 		markGuideActionCompleted(messageTsRaw, guideRaw) {

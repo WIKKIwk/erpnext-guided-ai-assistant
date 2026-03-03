@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Tuple
 from erpnext_ai_tutor.tutor.llm import call_llm
 
 _FIELDNAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+_DEFAULT_STOCK_ENTRY_ORDER = ["Material Receipt", "Material Transfer", "Material Issue"]
 
 
 def _as_text(value: Any) -> str:
@@ -116,7 +117,34 @@ def _pick_select_option(options: Any, preferred: List[str] | None = None) -> str
 	return opts[0]
 
 
-def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+def _normalize_stock_entry_type_preference(value: Any) -> str:
+	text = _as_text(value)
+	if not text:
+		return ""
+	lower = text.lower()
+	if lower in {"material issue", "issue"}:
+		return "Material Issue"
+	if lower in {"material transfer", "transfer"}:
+		return "Material Transfer"
+	if lower in {"material receipt", "receipt"}:
+		return "Material Receipt"
+	return ""
+
+
+def _stock_entry_preferred_order(stock_entry_type_preference: str = "") -> List[str]:
+	pref = _normalize_stock_entry_type_preference(stock_entry_type_preference)
+	if not pref:
+		return list(_DEFAULT_STOCK_ENTRY_ORDER)
+	return [pref] + [x for x in _DEFAULT_STOCK_ENTRY_ORDER if x != pref]
+
+
+def _fallback_plan(
+	doctype: str,
+	stage: str,
+	fields: List[Dict[str, Any]],
+	*,
+	stock_entry_type_preference: str = "",
+) -> List[Dict[str, str]]:
 	field_map = {str(f.get("fieldname") or "").strip(): f for f in fields}
 	lower_dt = _as_text(doctype).lower()
 	stage = _as_text(stage).lower() or "open_and_fill_basic"
@@ -143,7 +171,8 @@ def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 		if plan:
 			return plan[:6]
 	if lower_dt == "stock entry":
-		add("stock_entry_type", "Material Receipt", "ombor amaliyoti turi tanlanmasa qolgan qadamlar barqaror ishlamaydi")
+		stock_pref = _stock_entry_preferred_order(stock_entry_type_preference)[0]
+		add("stock_entry_type", stock_pref, "ombor amaliyoti turi tanlanmasa qolgan qadamlar barqaror ishlamaydi")
 		if plan:
 			return plan[:6]
 
@@ -172,7 +201,7 @@ def _fallback_plan(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 			value = "1"
 		elif fieldtype == "select":
 			options = f.get("options") if isinstance(f.get("options"), list) else []
-			preferred = ["Material Receipt", "Material Transfer", "Material Issue"] if fieldname == "stock_entry_type" else []
+			preferred = _stock_entry_preferred_order(stock_entry_type_preference) if fieldname == "stock_entry_type" else []
 			choice = _pick_select_option(options, preferred=preferred)
 			value = choice or "Demo"
 		elif fieldtype == "link":
@@ -209,7 +238,13 @@ def _extract_json_payload(text: str) -> Any:
 	return None
 
 
-def _normalize_plan(raw_plan: Any, fields: List[Dict[str, Any]], doctype: str = "") -> List[Dict[str, str]]:
+def _normalize_plan(
+	raw_plan: Any,
+	fields: List[Dict[str, Any]],
+	doctype: str = "",
+	*,
+	stock_entry_type_preference: str = "",
+) -> List[Dict[str, str]]:
 	if isinstance(raw_plan, dict):
 		if isinstance(raw_plan.get("plan"), list):
 			raw_plan = raw_plan.get("plan")
@@ -242,12 +277,14 @@ def _normalize_plan(raw_plan: Any, fields: List[Dict[str, Any]], doctype: str = 
 		fieldtype = _as_text(field.get("fieldtype")).lower()
 		if fieldtype in {"int", "float", "currency"} and not re.fullmatch(r"-?\d+(\.\d+)?", value):
 			value = "1"
-		if fieldtype == "select":
-			options = field.get("options") if isinstance(field.get("options"), list) else []
-			if options and value not in options:
-				preferred = ["Material Receipt", "Material Transfer", "Material Issue"] if fieldname == "stock_entry_type" else []
-				fallback_opt = _pick_select_option(options, preferred=preferred)
-				value = fallback_opt or value or "Demo"
+			if fieldtype == "select":
+				options = field.get("options") if isinstance(field.get("options"), list) else []
+				if options and value not in options:
+					preferred = (
+						_stock_entry_preferred_order(stock_entry_type_preference) if fieldname == "stock_entry_type" else []
+					)
+					fallback_opt = _pick_select_option(options, preferred=preferred)
+					value = fallback_opt or value or "Demo"
 		if not value:
 			value = "Demo"
 		out.append({"fieldname": fieldname, "value": value, "reason": reason})
@@ -255,7 +292,13 @@ def _normalize_plan(raw_plan: Any, fields: List[Dict[str, Any]], doctype: str = 
 	return out[:6]
 
 
-def _plan_with_llm(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+def _plan_with_llm(
+	doctype: str,
+	stage: str,
+	fields: List[Dict[str, Any]],
+	*,
+	stock_entry_type_preference: str = "",
+) -> List[Dict[str, str]]:
 	compact_fields = []
 	for f in fields[:80]:
 		compact_fields.append(
@@ -279,11 +322,13 @@ def _plan_with_llm(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 		"- Keep reasons short and practical in Uzbek.\n"
 		"- Prefer required fields first.\n"
 		"- For Item (open_and_fill_basic), strongly prefer item_code, item_name, item_group, stock_uom.\n"
+		"- For Stock Entry stock_entry_type, prioritize user's requested type when provided.\n"
 		"- Max 6 rows."
 	)
 	user_payload = {
 		"doctype": _as_text(doctype),
 		"stage": _as_text(stage) or "open_and_fill_basic",
+		"stock_entry_type_preference": _normalize_stock_entry_type_preference(stock_entry_type_preference),
 		"fields": compact_fields,
 	}
 	resp = call_llm(
@@ -294,17 +339,38 @@ def _plan_with_llm(doctype: str, stage: str, fields: List[Dict[str, Any]]) -> Li
 		max_tokens=900,
 	)
 	parsed = _extract_json_payload(resp)
-	return _normalize_plan(parsed, fields, doctype=doctype)
+	return _normalize_plan(
+		parsed,
+		fields,
+		doctype=doctype,
+		stock_entry_type_preference=stock_entry_type_preference,
+	)
 
 
-def plan_tutorial_fields(*, doctype: str, stage: str, fields: Any) -> Tuple[List[Dict[str, str]], str]:
+def plan_tutorial_fields(
+	*,
+	doctype: str,
+	stage: str,
+	fields: Any,
+	stock_entry_type_preference: str = "",
+) -> Tuple[List[Dict[str, str]], str]:
 	normalized = _normalize_fields(fields)
-	fallback = _fallback_plan(doctype, stage, normalized)
+	fallback = _fallback_plan(
+		doctype,
+		stage,
+		normalized,
+		stock_entry_type_preference=stock_entry_type_preference,
+	)
 	if not normalized:
 		return fallback, "fallback"
 
 	try:
-		ai_plan = _plan_with_llm(doctype, stage, normalized)
+		ai_plan = _plan_with_llm(
+			doctype,
+			stage,
+			normalized,
+			stock_entry_type_preference=stock_entry_type_preference,
+		)
 		if ai_plan:
 			return ai_plan, "ai"
 	except Exception:

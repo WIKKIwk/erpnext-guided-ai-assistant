@@ -32,6 +32,15 @@
 		return Math.max(min, Math.min(max, n));
 	}
 
+	function normalizeStockEntryTypePreference(value) {
+		const raw = String(value || "").trim().toLowerCase();
+		if (!raw) return "";
+		if (raw === "material issue" || raw === "issue") return "Material Issue";
+		if (raw === "material receipt" || raw === "receipt") return "Material Receipt";
+		if (raw === "material transfer" || raw === "transfer") return "Material Transfer";
+		return "";
+	}
+
 			class GuideRunner {
 				constructor({ widget }) {
 					this.widget = widget || null;
@@ -90,12 +99,18 @@
 				const stageRaw = String(tutorialRaw.stage || "open_and_fill_basic").trim().toLowerCase();
 				const allowedStages = new Set(["open_and_fill_basic", "fill_more", "show_save_only"]);
 				const stage = allowedStages.has(stageRaw) ? stageRaw : "open_and_fill_basic";
+				const stockEntryTypePreference = normalizeStockEntryTypePreference(
+					tutorialRaw.stock_entry_type_preference
+				);
 				if (mode === "create_record") {
 					tutorial = {
 						mode,
 						stage,
 						doctype: String(tutorialRaw.doctype || "").trim(),
 					};
+					if (stockEntryTypePreference) {
+						tutorial.stock_entry_type_preference = stockEntryTypePreference;
+					}
 				}
 			}
 			return {

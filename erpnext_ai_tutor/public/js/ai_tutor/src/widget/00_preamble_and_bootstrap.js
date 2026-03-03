@@ -77,6 +77,15 @@
 		"setup",
 		"automation",
 	]);
+
+	function normalizeStockEntryTypePreference(value) {
+		const raw = String(value || "").trim().toLowerCase();
+		if (!raw) return "";
+		if (raw === "material issue" || raw === "issue") return "Material Issue";
+		if (raw === "material receipt" || raw === "receipt") return "Material Receipt";
+		if (raw === "material transfer" || raw === "transfer") return "Material Transfer";
+		return "";
+	}
 	const ICONS = Object.freeze({
 		fab: `
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
@@ -236,18 +245,24 @@
 			const targetLabel = String(raw.target_label || "").trim();
 			const tutorialRaw = raw.tutorial;
 			let tutorial = null;
-			if (tutorialRaw && typeof tutorialRaw === "object") {
-				const mode = String(tutorialRaw.mode || "").trim().toLowerCase();
-				const stageRaw = String(tutorialRaw.stage || "open_and_fill_basic").trim().toLowerCase();
-				const allowedStages = new Set(["open_and_fill_basic", "fill_more", "show_save_only"]);
-				if (mode === "create_record") {
-					tutorial = {
-						mode,
-						stage: allowedStages.has(stageRaw) ? stageRaw : "open_and_fill_basic",
-						doctype: String(tutorialRaw.doctype || "").trim(),
-					};
+				if (tutorialRaw && typeof tutorialRaw === "object") {
+					const mode = String(tutorialRaw.mode || "").trim().toLowerCase();
+					const stageRaw = String(tutorialRaw.stage || "open_and_fill_basic").trim().toLowerCase();
+					const allowedStages = new Set(["open_and_fill_basic", "fill_more", "show_save_only"]);
+					const stockEntryTypePreference = normalizeStockEntryTypePreference(
+						tutorialRaw.stock_entry_type_preference
+					);
+					if (mode === "create_record") {
+						tutorial = {
+							mode,
+							stage: allowedStages.has(stageRaw) ? stageRaw : "open_and_fill_basic",
+							doctype: String(tutorialRaw.doctype || "").trim(),
+						};
+						if (stockEntryTypePreference) {
+							tutorial.stock_entry_type_preference = stockEntryTypePreference;
+						}
+					}
 				}
-			}
 			const repaired = this.applyGuideRouteOverride(route, targetLabel, menuPath);
 			return {
 				type: "navigation",

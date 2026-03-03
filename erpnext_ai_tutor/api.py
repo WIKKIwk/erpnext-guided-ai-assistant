@@ -143,7 +143,12 @@ def get_tutor_config() -> Dict[str, Any]:
 
 
 @frappe.whitelist()
-def plan_tutorial_fields(doctype: str, stage: str = "open_and_fill_basic", fields: Any | None = None) -> Dict[str, Any]:
+def plan_tutorial_fields(
+	doctype: str,
+	stage: str = "open_and_fill_basic",
+	fields: Any | None = None,
+	stock_entry_type_preference: str = "",
+) -> Dict[str, Any]:
 	"""Plan demo field-fill steps with AI first, then deterministic fallback."""
 	field_rows = parse_json_arg(fields or [])
 	if not isinstance(field_rows, list):
@@ -152,6 +157,7 @@ def plan_tutorial_fields(doctype: str, stage: str = "open_and_fill_basic", field
 		doctype=str(doctype or "").strip(),
 		stage=str(stage or "").strip().lower() or "open_and_fill_basic",
 		fields=field_rows,
+		stock_entry_type_preference=str(stock_entry_type_preference or "").strip(),
 	)
 	return {"ok": True, "plan": plan, "source": source}
 
