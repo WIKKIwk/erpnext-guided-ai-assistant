@@ -1211,10 +1211,23 @@
 		async run(guideRaw) {
 			const guide = this.normalizeGuide(guideRaw);
 			if (!guide) return { ok: false, message: "Guide payload noto'g'ri." };
+			if (guide.route && this.isAtRoute(guide.route)) {
+				return {
+					ok: true,
+					reached_target: true,
+					already_there: true,
+					message: "Siz allaqachon shu yerdasiz.",
+				};
+			}
 			this.stop();
 			this.running = true;
 			this.createLayer();
-			let result = { ok: true, message: "" };
+			let result = {
+				ok: true,
+				message: "",
+				reached_target: false,
+				already_there: false,
+			};
 
 			try {
 				const steps = this.buildSteps(guide);
@@ -1320,6 +1333,14 @@
 					}
 				}
 				await this.sleep(420);
+				if (guide.route && this.isAtRoute(guide.route)) {
+					result.ok = true;
+					result.reached_target = true;
+					result.already_there = false;
+					result.message = "";
+				} else if (!guide.route) {
+					result.reached_target = Boolean(result.ok);
+				}
 			} finally {
 				this.stop();
 			}

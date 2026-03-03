@@ -566,10 +566,43 @@
 			}
 		}
 
-		async runGuidedCursor(guide, opts = { auto: false }) {
+		setGuideButtonBusy(btn, busy) {
+			if (!btn) return;
+			btn.disabled = Boolean(busy);
+			btn.classList.toggle("is-running", Boolean(busy));
+		}
+
+		completeGuideButton(btn) {
+			if (!btn) return;
+			const actions = btn.closest(".erpnext-ai-tutor-message-actions");
+			if (!actions || actions.classList.contains("is-completing")) return;
+			actions.classList.add("is-completing");
+			btn.classList.add("is-complete");
+			window.setTimeout(() => {
+				try {
+					actions.remove();
+				} catch {
+					// ignore
+				}
+			}, 360);
+		}
+
+		async runGuidedCursor(guide, opts = { auto: false, triggerEl: null }) {
 			if (!guide || !this.isGuidedCursorEnabled() || !this.guideRunner) return;
+			const triggerEl = opts?.triggerEl || null;
+			this.setGuideButtonBusy(triggerEl, true);
 			try {
 				const runResult = await this.guideRunner.run(guide);
+				if (runResult?.already_there && !opts?.auto) {
+					this.append(
+						"assistant",
+						String(runResult?.message || "Siz allaqachon shu yerdasiz."),
+						{ route_key: this.routeKey || this.getRouteKey() }
+					);
+				}
+				if (runResult?.ok && runResult?.reached_target && !runResult?.already_there) {
+					this.completeGuideButton(triggerEl);
+				}
 				if (!runResult?.ok && !opts?.auto) {
 					this.append(
 						"assistant",
@@ -584,6 +617,14 @@
 						"Kursor yo‘riqnomani ishga tushirib bo‘lmadi. Sahifani yangilab qayta urinib ko‘ring.",
 						{ route_key: this.routeKey || this.getRouteKey() }
 					);
+				}
+			} finally {
+				const shouldKeepBusy =
+					Boolean(triggerEl) &&
+					triggerEl.classList.contains("is-complete") &&
+					triggerEl.closest(".erpnext-ai-tutor-message-actions")?.classList.contains("is-completing");
+				if (!shouldKeepBusy) {
+					this.setGuideButtonBusy(triggerEl, false);
 				}
 			}
 		}
@@ -1032,8 +1073,11 @@
 				guideBtn.type = "button";
 				guideBtn.className = "erpnext-ai-tutor-guide-btn";
 				guideBtn.textContent = "Ko'rsatib ber";
-				guideBtn.addEventListener("click", () => {
-					this.runGuidedCursor(guide, { auto: false });
+				guideBtn.addEventListener("click", (event) => {
+					this.runGuidedCursor(guide, {
+						auto: false,
+						triggerEl: event?.currentTarget || guideBtn,
+					});
 				});
 				actions.appendChild(guideBtn);
 				bubble.appendChild(actions);
@@ -1571,8 +1615,11 @@
 			guideBtn.type = "button";
 			guideBtn.className = "erpnext-ai-tutor-guide-btn";
 			guideBtn.textContent = "Ko'rsatib ber";
-			guideBtn.addEventListener("click", () => {
-				this.runGuidedCursor(normalizedGuide, { auto: false });
+			guideBtn.addEventListener("click", (event) => {
+				this.runGuidedCursor(normalizedGuide, {
+					auto: false,
+					triggerEl: event?.currentTarget || guideBtn,
+				});
 			});
 			actions.appendChild(guideBtn);
 			bubble.appendChild(actions);

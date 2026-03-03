@@ -619,6 +619,19 @@
 	margin-top: 8px;
 	display: flex;
 	justify-content: flex-start;
+	transition: opacity 300ms ease, transform 300ms ease, max-height 300ms ease, margin-top 300ms ease;
+	transform-origin: left center;
+	max-height: 42px;
+	opacity: 1;
+	transform: translateY(0);
+	overflow: hidden;
+}
+
+.erpnext-ai-tutor-message-actions.is-completing {
+	opacity: 0;
+	transform: translateY(-4px);
+	max-height: 0;
+	margin-top: 0;
 }
 
 .erpnext-ai-tutor-guide-btn {
@@ -632,6 +645,11 @@
 	font-weight: 600;
 	cursor: pointer;
 	transition: background 120ms ease, transform 120ms ease, filter 120ms ease;
+}
+
+.erpnext-ai-tutor-guide-btn.is-running {
+	opacity: 0.84;
+	cursor: wait;
 }
 
 .erpnext-ai-tutor-guide-btn:hover {
