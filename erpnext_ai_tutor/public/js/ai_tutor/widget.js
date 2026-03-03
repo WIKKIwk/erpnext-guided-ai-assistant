@@ -206,6 +206,25 @@
 			};
 		}
 
+		normalizeRoutePath(value) {
+			const cleaned = String(value || "").trim();
+			if (!cleaned) return "";
+			const noHash = cleaned.split("#")[0];
+			const noQuery = noHash.split("?")[0];
+			if (!noQuery) return "";
+			if (noQuery === "/") return "/";
+			return noQuery.replace(/\/+$/, "");
+		}
+
+		isGuideTargetActive(guideRaw) {
+			const guide = this.normalizeGuidePayload(guideRaw);
+			if (!guide?.route) return false;
+			const targetPath = this.normalizeRoutePath(guide.route);
+			const currentPath = this.normalizeRoutePath(window.location.pathname || "");
+			if (!targetPath || !currentPath) return false;
+			return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
+		}
+
 		getDraftScopeKey(routeKey = "") {
 			const activeConversation = String(this.activeConversationId || "").trim();
 			if (activeConversation) {
@@ -652,7 +671,7 @@
 					);
 				}
 
-				let reachedTarget = Boolean(runResult?.ok && runResult?.reached_target && !runResult?.already_there);
+				let reachedTarget = Boolean(runResult?.ok && runResult?.reached_target);
 				if (!reachedTarget && guide?.route && this.guideRunner?.isAtRoute(guide.route)) {
 					reachedTarget = true;
 				}
@@ -1078,10 +1097,15 @@
 			if (!conv) return;
 
 			const messages = Array.isArray(conv.messages) ? conv.messages : [];
+			let changed = false;
 			for (const m of messages) {
 				if (!m || !m.role) continue;
 				const guide = this.normalizeGuidePayload(m.guide);
-				const guideCompleted = Boolean(m.guide_completed);
+				const guideCompleted = Boolean(m.guide_completed) || this.isGuideTargetActive(guide);
+				if (guideCompleted && !m.guide_completed) {
+					m.guide_completed = true;
+					changed = true;
+				}
 				this.history.push({
 					role: m.role,
 					content: m.content,
@@ -1096,6 +1120,10 @@
 					guide_completed: guideCompleted,
 				});
 			}
+			if (changed) {
+				conv.updated_at = Date.now();
+				this.saveChatState();
+			}
 			this.$body.scrollTop = this.$body.scrollHeight;
 		}
 
@@ -1103,9 +1131,11 @@
 			const wrap = document.createElement("div");
 			wrap.className = `erpnext-ai-tutor-message ${role}`;
 			wrap.setAttribute("role", "listitem");
+			const guide = this.normalizeGuidePayload(opts?.guide);
+			const guideCompleted = Boolean(opts?.guide_completed) || this.isGuideTargetActive(guide);
 			const messageTs = this.normalizeMessageTs(ts);
 			if (messageTs) wrap.dataset.messageTs = String(messageTs);
-			if (opts?.guide_completed) wrap.dataset.guideCompleted = "1";
+			if (guideCompleted) wrap.dataset.guideCompleted = "1";
 			if (opts?.animate) wrap.classList.add("is-new");
 
 			const bubble = document.createElement("div");
@@ -1114,7 +1144,6 @@
 			const text = document.createElement("div");
 			text.className = "erpnext-ai-tutor-text";
 			if (role === "assistant") {
-				const guide = this.normalizeGuidePayload(opts?.guide);
 				const labelRouteMap = this.buildGuideLabelRouteMap(guide);
 				const routeLabelMap = this.buildGuideRouteLabelMap(guide);
 				let assistantText = String(content ?? "");
@@ -1142,8 +1171,7 @@
 			meta.append(metaTime, metaStatus);
 
 			bubble.append(text, meta);
-			const guide = this.normalizeGuidePayload(opts?.guide);
-			if (role === "assistant" && guide && this.isGuidedCursorEnabled() && !opts?.guide_completed) {
+			if (role === "assistant" && guide && this.isGuidedCursorEnabled() && !guideCompleted) {
 				const actions = document.createElement("div");
 				actions.className = "erpnext-ai-tutor-message-actions";
 				const guideBtn = document.createElement("button");
@@ -1578,17 +1606,18 @@
 			const ts = Date.now();
 			const routeKey = String(opts?.route_key || this.routeKey || this.getRouteKey() || "").trim();
 			const guide = this.normalizeGuidePayload(opts?.guide);
-			this.history.push({ role, content, route_key: routeKey, guide, guide_completed: false, ts });
+			const guideCompleted = this.isGuideTargetActive(guide);
+			this.history.push({ role, content, route_key: routeKey, guide, guide_completed: guideCompleted, ts });
 			const el = this.appendToDOM(role, content, ts, {
 				animate: true,
 				guide,
-				guide_completed: false,
+				guide_completed: guideCompleted,
 			});
 
 			const conv = this.getActiveConversation();
 			if (conv) {
 				if (!Array.isArray(conv.messages)) conv.messages = [];
-				conv.messages.push({ role, content, ts, route_key: routeKey, guide, guide_completed: false });
+				conv.messages.push({ role, content, ts, route_key: routeKey, guide, guide_completed: guideCompleted });
 				conv.updated_at = ts;
 				conv.messages = conv.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
 				this.pruneChatState();
@@ -1689,6 +1718,11 @@
 			const normalizedGuide = this.normalizeGuidePayload(guide);
 			if (!normalizedGuide || !this.isGuidedCursorEnabled()) return;
 			if (wrap.dataset.guideCompleted === "1") return;
+			if (this.isGuideTargetActive(normalizedGuide)) {
+				wrap.dataset.guideCompleted = "1";
+				this.markGuideActionCompleted(this.normalizeMessageTs(wrap.dataset.messageTs), normalizedGuide);
+				return;
+			}
 			const bubble = wrap.querySelector(".erpnext-ai-tutor-bubble");
 			if (!bubble) return;
 			if (bubble.querySelector(".erpnext-ai-tutor-message-actions")) return;
@@ -1715,6 +1749,7 @@
 			const ts = Date.now();
 			const routeKey = String(opts?.route_key || this.routeKey || this.getRouteKey() || "").trim();
 			const guide = this.normalizeGuidePayload(opts?.guide);
+			const guideCompleted = this.isGuideTargetActive(guide);
 			const finalText = String(content ?? "");
 
 			this.history.push({
@@ -1722,13 +1757,13 @@
 				content: finalText,
 				route_key: routeKey,
 				guide,
-				guide_completed: false,
+				guide_completed: guideCompleted,
 				ts,
 			});
 			const wrap = this.appendToDOM("assistant", "", ts, {
 				animate: true,
 				guide: null,
-				guide_completed: false,
+				guide_completed,
 			});
 
 			const conv = this.getActiveConversation();
@@ -1740,7 +1775,7 @@
 					ts,
 					route_key: routeKey,
 					guide,
-					guide_completed: false,
+					guide_completed: guideCompleted,
 				});
 				conv.updated_at = ts;
 				conv.messages = conv.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
