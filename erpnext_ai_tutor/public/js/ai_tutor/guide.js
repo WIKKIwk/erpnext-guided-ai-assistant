@@ -946,32 +946,44 @@
 			return false;
 		}
 
-		findCreateActionButton() {
-			const roots = [
-				document.querySelector(".page-head .page-actions"),
-				document.querySelector(".layout-main .page-actions"),
-				document.querySelector(".page-actions"),
-			].filter(Boolean);
-			const createRe = /\b(add|new|create|yangi|qo['’]?sh|добав|созд)\b/i;
-			let fallbackPrimary = null;
-			for (const root of roots) {
-				const nodes = root.querySelectorAll("button, a.btn, [role='button']");
-				for (const node of nodes) {
-					const el = getClickable(node) || node;
-					if (!el || !isVisible(el)) continue;
-					if (this.isForbiddenActionElement(el)) continue;
-					const label = this.getElementLabel(el);
-					if (!label) continue;
-					if (el.matches?.(".primary-action, .btn-primary") && !fallbackPrimary) {
-						fallbackPrimary = el;
+			findCreateActionButton() {
+				const createRe = /\b(add|new|create|yangi|qo['’]?sh|добав|созд)\b/i;
+				const roots = [
+					document.querySelector(".page-head .page-actions"),
+					document.querySelector(".layout-main .page-actions"),
+					document.querySelector(".layout-main-section"),
+					document.querySelector(".page-container"),
+					document.body,
+				].filter(Boolean);
+				let best = null;
+				let bestScore = -1;
+				for (const root of roots) {
+					const nodes = root.querySelectorAll(
+						"button, a.btn, [role='button'], .primary-action, .btn-primary, [data-label]"
+					);
+					for (const node of nodes) {
+						const el = getClickable(node) || node;
+						if (!el || !isVisible(el)) continue;
+						if (el.closest(".erpnext-ai-tutor-root")) continue;
+						if (this.isForbiddenActionElement(el)) continue;
+						const label = this.getElementLabel(el);
+						if (!label) continue;
+						let score = 0;
+						if (createRe.test(label)) score += 120;
+						if (el.matches?.(".primary-action, .btn-primary")) score += 35;
+						if (/\+\s*[a-z]/i.test(label) || /^\+\s*/.test(label)) score += 20;
+						if (/item|invoice|order|customer|supplier/i.test(label)) score += 10;
+						if (score > bestScore) {
+							best = el;
+							bestScore = score;
+						}
 					}
-					if (createRe.test(label)) return el;
 				}
+				if (best && bestScore >= 35) return best;
+				return null;
 			}
-			return fallbackPrimary;
-		}
 
-		findSaveActionButton() {
+			findSaveActionButton() {
 			const roots = [
 				document.querySelector(".page-head .page-actions"),
 				document.querySelector(".layout-main .page-actions"),
@@ -1009,6 +1021,19 @@
 					}
 				}
 				return null;
+			}
+
+			async openNewDocFallback(doctype) {
+				const dt = String(doctype || "").trim();
+				if (!dt || typeof frappe?.new_doc !== "function") return false;
+				try {
+					this.emitProgress(`🔁 UI tugmani topolmadim, fallback orqali **${dt}** uchun yangi forma ochyapman.`);
+					frappe.new_doc(dt);
+					await this.waitFor(() => this.isOnDoctypeNewForm(dt) || this.isQuickEntryOpen(), 5200, 120);
+					return this.isOnDoctypeNewForm(dt) || this.isQuickEntryOpen();
+				} catch {
+					return false;
+				}
 			}
 
 			getQuickEntryDialog() {
@@ -1289,18 +1314,26 @@
 					}
 					const createBtn = await this.waitFor(() => this.findCreateActionButton(), 3200, 120);
 					if (!createBtn) {
-						return { ok: false, message: 'Yangi yozuv ochish tugmasini topa olmadim ("Add/New/Create").' };
+						const openedByFallback = await this.openNewDocFallback(doctype);
+						if (!openedByFallback) {
+							return { ok: false, message: 'Yangi yozuv ochish tugmasini topa olmadim ("Add/New/Create").' };
+						}
+					} else {
+						const clicked = await this.focusElement(createBtn, 'Yangi yozuv ochish uchun "Add/New" tugmasini bosamiz.', {
+							click: true,
+							duration_ms: 320,
+							pre_click_pause_ms: 120,
+						});
+						if (!clicked) {
+							const openedByFallback = await this.openNewDocFallback(doctype);
+							if (!openedByFallback) {
+								return { ok: false, message: "Yangi yozuv tugmasini xavfsiz bosib bo'lmadi." };
+							}
+						} else {
+							this.emitProgress("➕ `Add/New` bosildi, endi forma turini tekshiryapman.");
+							await this.waitFor(() => this.isOnDoctypeNewForm(doctype) || this.isQuickEntryOpen(), 5200, 120);
+						}
 					}
-					const clicked = await this.focusElement(createBtn, 'Yangi yozuv ochish uchun "Add/New" tugmasini bosamiz.', {
-						click: true,
-						duration_ms: 320,
-						pre_click_pause_ms: 120,
-					});
-					if (!clicked) {
-						return { ok: false, message: "Yangi yozuv tugmasini xavfsiz bosib bo'lmadi." };
-					}
-					this.emitProgress("➕ `Add/New` bosildi, endi forma turini tekshiryapman.");
-					await this.waitFor(() => this.isOnDoctypeNewForm(doctype) || this.isQuickEntryOpen(), 5200, 120);
 				}
 
 				if (!this.isOnDoctypeNewForm(doctype) && this.isQuickEntryOpen()) {
