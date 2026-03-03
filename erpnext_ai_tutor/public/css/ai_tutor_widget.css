@@ -237,6 +237,10 @@
 	transform: translateX(44px);
 }
 
+.erpnext-ai-tutor-root.is-new-chat-pending .erpnext-ai-tutor-history-btn {
+	transform: translateX(44px);
+}
+
 .erpnext-ai-tutor-root.is-new-chat-pending .erpnext-ai-tutor-new-btn svg {
 	transform: rotate(45deg) scale(0.94);
 }
