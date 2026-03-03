@@ -38,6 +38,7 @@
 	const DRAFT_STORAGE_PREFIX = "erpnext_ai_tutor_draft";
 	const INPUT_MIN_HEIGHT = 38;
 	const INPUT_MAX_HEIGHT = 160;
+	const DRAWER_CLOSE_ANIM_MS = 280;
 	const ICONS = Object.freeze({
 		fab: `
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
@@ -103,6 +104,7 @@
 			this.$newChatBtn = null;
 			this.$typing = null;
 			this.guideRunner = null;
+			this._drawerHideTimer = null;
 			this._boundGlobalKeydown = (ev) => this.onGlobalKeydown(ev);
 			this._boundDrawerKeydown = (ev) => this.onDrawerKeydown(ev);
 			this._lastFocusedBeforeOpen = null;
@@ -1287,32 +1289,57 @@
 
 		open() {
 			if (this.isOpen) return;
+			if (!this.$drawer) return;
 			this._lastFocusedBeforeOpen = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 			this.isOpen = true;
-			this.$drawer.classList.remove("erpnext-ai-tutor-hidden");
+			if (this._drawerHideTimer) {
+				clearTimeout(this._drawerHideTimer);
+				this._drawerHideTimer = null;
+			}
+			this.$drawer.classList.remove("erpnext-ai-tutor-hidden", "is-closing");
 			this.$drawer.setAttribute("aria-hidden", "false");
+			window.requestAnimationFrame(() => {
+				if (!this.$drawer) return;
+				this.$drawer.classList.add("is-open");
+			});
+			this.$root?.classList.add("is-open");
 			this.loadDraftForRoute(this.routeKey);
 			setTimeout(() => {
 				this.resizeInput();
 				if (this.$input) this.$input.focus();
-			}, 0);
+			}, 160);
 		}
 
 		close() {
 			this.saveDraft(this.routeKey);
 			this.isOpen = false;
-			this.$drawer.classList.add("erpnext-ai-tutor-hidden");
+			if (!this.$drawer) return;
+			if (this._drawerHideTimer) {
+				clearTimeout(this._drawerHideTimer);
+				this._drawerHideTimer = null;
+			}
+			this.$drawer.classList.remove("is-open");
+			this.$drawer.classList.add("is-closing");
 			this.$drawer.setAttribute("aria-hidden", "true");
+			this.$root?.classList.remove("is-open");
 			this.clearPill();
 			this.hideTyping();
 			if (this.guideRunner) this.guideRunner.stop();
+			this._drawerHideTimer = window.setTimeout(() => {
+				if (!this.$drawer) return;
+				this.$drawer.classList.add("erpnext-ai-tutor-hidden");
+				this.$drawer.classList.remove("is-closing");
+				this._drawerHideTimer = null;
+			}, DRAWER_CLOSE_ANIM_MS);
 			const fallbackFocus = this.$fab;
 			const restoreTo = this._lastFocusedBeforeOpen;
-			if (restoreTo && typeof restoreTo.focus === "function" && !this.$drawer.contains(restoreTo)) {
-				restoreTo.focus();
-			} else if (fallbackFocus && typeof fallbackFocus.focus === "function") {
-				fallbackFocus.focus();
-			}
+			window.setTimeout(() => {
+				if (restoreTo && typeof restoreTo.focus === "function" && !this.$drawer.contains(restoreTo)) {
+					restoreTo.focus();
+				} else if (fallbackFocus && typeof fallbackFocus.focus === "function") {
+					fallbackFocus.focus();
+				}
+			}, DRAWER_CLOSE_ANIM_MS);
 		}
 
 		toggle() {
