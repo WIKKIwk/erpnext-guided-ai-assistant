@@ -572,10 +572,60 @@
 			btn.classList.toggle("is-running", Boolean(busy));
 		}
 
+		normalizeMessageTs(value) {
+			const n = Number(value);
+			return Number.isFinite(n) && n > 0 ? n : 0;
+		}
+
+		getGuideSignature(guideRaw) {
+			const guide = this.normalizeGuidePayload(guideRaw);
+			if (!guide) return "";
+			const route = String(guide.route || "").trim().toLowerCase();
+			const target = String(guide.target_label || "").trim().toLowerCase();
+			const path = Array.isArray(guide.menu_path)
+				? guide.menu_path.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean).join(">")
+				: "";
+			return [route, target, path].join("|");
+		}
+
+		markGuideActionCompleted(messageTsRaw, guideRaw) {
+			const messageTs = this.normalizeMessageTs(messageTsRaw);
+			if (!messageTs) return;
+			const sig = this.getGuideSignature(guideRaw);
+			const matchesGuide = (itemGuide) => {
+				if (!sig) return true;
+				return this.getGuideSignature(itemGuide) === sig;
+			};
+			const markIn = (messages) => {
+				if (!Array.isArray(messages)) return false;
+				let changed = false;
+				for (const msg of messages) {
+					if (!msg || msg.role !== "assistant") continue;
+					if (this.normalizeMessageTs(msg.ts) !== messageTs) continue;
+					if (!matchesGuide(msg.guide)) continue;
+					if (!msg.guide_completed) {
+						msg.guide_completed = true;
+						changed = true;
+					}
+				}
+				return changed;
+			};
+
+			const conv = this.getActiveConversation();
+			const changedConv = markIn(conv?.messages);
+			const changedHistory = markIn(this.history);
+			if (changedConv || changedHistory) {
+				if (conv) conv.updated_at = Date.now();
+				this.saveChatState();
+			}
+		}
+
 		completeGuideButton(btn) {
 			if (!btn) return;
 			const actions = btn.closest(".erpnext-ai-tutor-message-actions");
 			if (!actions || actions.classList.contains("is-completing")) return;
+			const wrap = btn.closest(".erpnext-ai-tutor-message");
+			if (wrap) wrap.dataset.guideCompleted = "1";
 			actions.classList.add("is-completing");
 			btn.classList.add("is-complete");
 			window.setTimeout(() => {
@@ -587,9 +637,10 @@
 			}, 360);
 		}
 
-		async runGuidedCursor(guide, opts = { auto: false, triggerEl: null }) {
+		async runGuidedCursor(guide, opts = { auto: false, triggerEl: null, messageTs: 0 }) {
 			if (!guide || !this.isGuidedCursorEnabled() || !this.guideRunner) return;
 			const triggerEl = opts?.triggerEl || null;
+			const messageTs = this.normalizeMessageTs(opts?.messageTs);
 			this.setGuideButtonBusy(triggerEl, true);
 			try {
 				const runResult = await this.guideRunner.run(guide);
@@ -600,7 +651,18 @@
 						{ route_key: this.routeKey || this.getRouteKey() }
 					);
 				}
-				if (runResult?.ok && runResult?.reached_target && !runResult?.already_there) {
+
+				let reachedTarget = Boolean(runResult?.ok && runResult?.reached_target && !runResult?.already_there);
+				if (!reachedTarget && guide?.route && this.guideRunner?.isAtRoute(guide.route)) {
+					reachedTarget = true;
+				}
+				if (!reachedTarget && guide?.route) {
+					await new Promise((resolve) => window.setTimeout(resolve, 360));
+					if (this.guideRunner?.isAtRoute(guide.route)) reachedTarget = true;
+				}
+
+				if (reachedTarget) {
+					this.markGuideActionCompleted(messageTs, guide);
 					this.completeGuideButton(triggerEl);
 				}
 				if (!runResult?.ok && !opts?.auto) {
@@ -1019,8 +1081,20 @@
 			for (const m of messages) {
 				if (!m || !m.role) continue;
 				const guide = this.normalizeGuidePayload(m.guide);
-				this.history.push({ role: m.role, content: m.content, route_key: m.route_key || "", guide });
-				this.appendToDOM(m.role, m.content, m.ts, { animate: false, guide });
+				const guideCompleted = Boolean(m.guide_completed);
+				this.history.push({
+					role: m.role,
+					content: m.content,
+					route_key: m.route_key || "",
+					guide,
+					guide_completed: guideCompleted,
+					ts: m.ts,
+				});
+				this.appendToDOM(m.role, m.content, m.ts, {
+					animate: false,
+					guide,
+					guide_completed: guideCompleted,
+				});
 			}
 			this.$body.scrollTop = this.$body.scrollHeight;
 		}
@@ -1029,6 +1103,9 @@
 			const wrap = document.createElement("div");
 			wrap.className = `erpnext-ai-tutor-message ${role}`;
 			wrap.setAttribute("role", "listitem");
+			const messageTs = this.normalizeMessageTs(ts);
+			if (messageTs) wrap.dataset.messageTs = String(messageTs);
+			if (opts?.guide_completed) wrap.dataset.guideCompleted = "1";
 			if (opts?.animate) wrap.classList.add("is-new");
 
 			const bubble = document.createElement("div");
@@ -1066,7 +1143,7 @@
 
 			bubble.append(text, meta);
 			const guide = this.normalizeGuidePayload(opts?.guide);
-			if (role === "assistant" && guide && this.isGuidedCursorEnabled()) {
+			if (role === "assistant" && guide && this.isGuidedCursorEnabled() && !opts?.guide_completed) {
 				const actions = document.createElement("div");
 				actions.className = "erpnext-ai-tutor-message-actions";
 				const guideBtn = document.createElement("button");
@@ -1077,6 +1154,7 @@
 					this.runGuidedCursor(guide, {
 						auto: false,
 						triggerEl: event?.currentTarget || guideBtn,
+						messageTs,
 					});
 				});
 				actions.appendChild(guideBtn);
@@ -1500,13 +1578,17 @@
 			const ts = Date.now();
 			const routeKey = String(opts?.route_key || this.routeKey || this.getRouteKey() || "").trim();
 			const guide = this.normalizeGuidePayload(opts?.guide);
-			this.history.push({ role, content, route_key: routeKey, guide });
-			const el = this.appendToDOM(role, content, ts, { animate: true, guide });
+			this.history.push({ role, content, route_key: routeKey, guide, guide_completed: false, ts });
+			const el = this.appendToDOM(role, content, ts, {
+				animate: true,
+				guide,
+				guide_completed: false,
+			});
 
 			const conv = this.getActiveConversation();
 			if (conv) {
 				if (!Array.isArray(conv.messages)) conv.messages = [];
-				conv.messages.push({ role, content, ts, route_key: routeKey, guide });
+				conv.messages.push({ role, content, ts, route_key: routeKey, guide, guide_completed: false });
 				conv.updated_at = ts;
 				conv.messages = conv.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
 				this.pruneChatState();
@@ -1606,9 +1688,11 @@
 			if (!wrap) return;
 			const normalizedGuide = this.normalizeGuidePayload(guide);
 			if (!normalizedGuide || !this.isGuidedCursorEnabled()) return;
+			if (wrap.dataset.guideCompleted === "1") return;
 			const bubble = wrap.querySelector(".erpnext-ai-tutor-bubble");
 			if (!bubble) return;
 			if (bubble.querySelector(".erpnext-ai-tutor-message-actions")) return;
+			const messageTs = this.normalizeMessageTs(wrap.dataset.messageTs);
 			const actions = document.createElement("div");
 			actions.className = "erpnext-ai-tutor-message-actions";
 			const guideBtn = document.createElement("button");
@@ -1619,6 +1703,7 @@
 				this.runGuidedCursor(normalizedGuide, {
 					auto: false,
 					triggerEl: event?.currentTarget || guideBtn,
+					messageTs,
 				});
 			});
 			actions.appendChild(guideBtn);
@@ -1632,13 +1717,31 @@
 			const guide = this.normalizeGuidePayload(opts?.guide);
 			const finalText = String(content ?? "");
 
-			this.history.push({ role: "assistant", content: finalText, route_key: routeKey, guide });
-			const wrap = this.appendToDOM("assistant", "", ts, { animate: true, guide: null });
+			this.history.push({
+				role: "assistant",
+				content: finalText,
+				route_key: routeKey,
+				guide,
+				guide_completed: false,
+				ts,
+			});
+			const wrap = this.appendToDOM("assistant", "", ts, {
+				animate: true,
+				guide: null,
+				guide_completed: false,
+			});
 
 			const conv = this.getActiveConversation();
 			if (conv) {
 				if (!Array.isArray(conv.messages)) conv.messages = [];
-				conv.messages.push({ role: "assistant", content: finalText, ts, route_key: routeKey, guide });
+				conv.messages.push({
+					role: "assistant",
+					content: finalText,
+					ts,
+					route_key: routeKey,
+					guide,
+					guide_completed: false,
+				});
 				conv.updated_at = ts;
 				conv.messages = conv.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
 				this.pruneChatState();
