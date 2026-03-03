@@ -327,6 +327,54 @@ def _normalize_menu_path(menu_path: Any, doctype: str) -> List[str]:
 	return path[:6]
 
 
+def _normalize_text_for_match(value: str) -> str:
+	text = str(value or "").lower()
+	text = re.sub(r"[^a-z0-9\u0400-\u04ff]+", " ", text)
+	return re.sub(r"\s+", " ", text).strip()
+
+
+def _extract_doctype_mention_from_text(user_message: str) -> str:
+	normalized_text = _normalize_text_for_match(user_message)
+	if not normalized_text:
+		return ""
+	wrapped_text = f" {normalized_text} "
+
+	# First pass: known aliases/synonyms used by users.
+	for alias, canonical in sorted(AI_TARGET_ALIASES.items(), key=lambda x: len(str(x[0])), reverse=True):
+		alias_norm = _normalize_text_for_match(alias)
+		if not alias_norm:
+			continue
+		if f" {alias_norm} " in wrapped_text and _is_real_doctype(canonical):
+			return canonical
+
+	# Second pass: any real doctype name mention (longest match wins).
+	rows = frappe.db.sql(
+		"""
+		select name
+		from `tabDocType`
+		where ifnull(issingle, 0)=0
+		  and ifnull(istable, 0)=0
+		  and ifnull(is_virtual, 0)=0
+		""",
+		as_dict=True,
+	)
+	best_name = ""
+	best_len = 0
+	for row in rows:
+		name = str((row or {}).get("name") or "").strip()
+		if not name:
+			continue
+		name_norm = _normalize_text_for_match(name)
+		if not name_norm or len(name_norm) < 4:
+			continue
+		if f" {name_norm} " not in wrapped_text:
+			continue
+		if len(name_norm) > best_len and _is_real_doctype(name):
+			best_len = len(name_norm)
+			best_name = name
+	return best_name
+
+
 def _extract_stock_entry_type_preference(user_message: str, doctype: str = "") -> str:
 	text = str(user_message or "").strip().lower()
 	if not text:
@@ -409,6 +457,12 @@ def _resolve_doctype_target(
 	*,
 	allow_context_fallback: bool = True,
 ) -> Dict[str, Any]:
+	# Highest priority: explicit doctype mention in user sentence.
+	explicit_doctype = _extract_doctype_mention_from_text(user_message)
+	target = _target_from_doctype(explicit_doctype)
+	if target:
+		return target
+
 	plan = build_navigation_plan(user_message)
 	target = _doctype_from_plan(plan)
 	if target:
@@ -641,7 +695,27 @@ def maybe_handle_training_flow(
 	create_requested = bool(CREATE_ACTION_RE.search(text)) or practical_tutorial_requested or intent_action == "create_record"
 	continue_requested = bool(CONTINUE_ACTION_RE.search(text)) or intent_action == "continue"
 	show_save_requested = bool(SHOW_SAVE_RE.search(text)) or intent_action == "show_save"
-	requested_stock_type = _extract_stock_entry_type_preference(text, state_doctype or intent_doctype)
+	explicit_target = _resolve_doctype_target(text, ctx, allow_context_fallback=False)
+	explicit_doctype = str(explicit_target.get("doctype") or "").strip()
+	requested_stock_type = _extract_stock_entry_type_preference(
+		text,
+		explicit_doctype or state_doctype or intent_doctype,
+	)
+
+	def _resolve_training_target(*, allow_context_fallback: bool, fallback_doctype: str = "") -> Dict[str, Any]:
+		# User's direct doctype mention always wins over inferred intent.
+		if explicit_target:
+			return explicit_target
+		if intent_doctype:
+			intent_target = _resolve_doctype_target(intent_doctype, ctx, allow_context_fallback=False)
+			if intent_target:
+				return intent_target
+		return _resolve_doctype_target(
+			text,
+			ctx,
+			fallback_doctype=fallback_doctype,
+			allow_context_fallback=allow_context_fallback,
+		)
 
 	def _pick_stock_entry_type(doctype_name: str) -> str:
 		if str(doctype_name or "").strip().lower() != "stock entry":
@@ -653,8 +727,7 @@ def maybe_handle_training_flow(
 		return ""
 
 	if pending == "action":
-		target_seed = intent_doctype or text
-		target = _resolve_doctype_target(target_seed, ctx, allow_context_fallback=False)
+		target = _resolve_training_target(allow_context_fallback=False)
 		if target:
 			doctype = str(target.get("doctype") or "").strip()
 			reply = _start_tutorial_reply(lang, doctype)
@@ -674,27 +747,27 @@ def maybe_handle_training_flow(
 					stock_entry_type_preference=_pick_stock_entry_type(doctype),
 				),
 			)
-			if create_requested:
-				target = _resolve_doctype_target(target_seed, ctx, allow_context_fallback=not bool(intent_doctype))
-				if target:
-					doctype = str(target.get("doctype") or "").strip()
-					reply = _start_tutorial_reply(lang, doctype)
-					guide = _build_guide_payload(
-						doctype=doctype,
-						route=str(target.get("route") or ""),
-						menu_path=target.get("menu_path") or [],
-						stage="open_and_fill_basic",
+		if create_requested:
+			target = _resolve_training_target(allow_context_fallback=True)
+			if target:
+				doctype = str(target.get("doctype") or "").strip()
+				reply = _start_tutorial_reply(lang, doctype)
+				guide = _build_guide_payload(
+					doctype=doctype,
+					route=str(target.get("route") or ""),
+					menu_path=target.get("menu_path") or [],
+					stage="open_and_fill_basic",
+					stock_entry_type_preference=_pick_stock_entry_type(doctype),
+				)
+				return _build_training_reply(
+					reply=reply,
+					guide=guide,
+					tutor_state=_coach_state(
+						doctype,
+						"open_and_fill_basic",
 						stock_entry_type_preference=_pick_stock_entry_type(doctype),
-					)
-					return _build_training_reply(
-						reply=reply,
-						guide=guide,
-						tutor_state=_coach_state(
-							doctype,
-							"open_and_fill_basic",
-							stock_entry_type_preference=_pick_stock_entry_type(doctype),
-						),
-					)
+					),
+				)
 			return _build_training_reply(
 				reply=_target_clarify_reply(lang),
 				tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
@@ -702,10 +775,9 @@ def maybe_handle_training_flow(
 		return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
 
 	if pending == "target":
-		target_seed = intent_doctype or text
-		target = _resolve_doctype_target(target_seed, ctx, allow_context_fallback=False)
+		target = _resolve_training_target(allow_context_fallback=False)
 		if not target and create_requested:
-			target = _resolve_doctype_target(target_seed, ctx, allow_context_fallback=not bool(intent_doctype))
+			target = _resolve_training_target(allow_context_fallback=True)
 		if not target:
 			return _build_training_reply(
 				reply=_target_clarify_reply(lang),
@@ -731,32 +803,35 @@ def maybe_handle_training_flow(
 		)
 
 	if state_action == "create_record" and state_doctype and (continue_requested or show_save_requested):
-		stage = "show_save_only" if show_save_requested else "fill_more"
-		target = _resolve_doctype_target(state_doctype, ctx, fallback_doctype=state_doctype)
-		doctype = str(target.get("doctype") or state_doctype).strip()
-		route = str(target.get("route") or f"/app/{_doctype_to_slug(doctype)}")
-		menu_path = target.get("menu_path") or [doctype]
-		reply = _continue_tutorial_reply(lang, doctype, stage)
-		guide = _build_guide_payload(
-			doctype=doctype,
-			route=route,
-			menu_path=menu_path,
-			stage=stage,
-			stock_entry_type_preference=_pick_stock_entry_type(doctype),
-		)
-		return _build_training_reply(
-			reply=reply,
-			guide=guide,
-			tutor_state=_coach_state(
-				doctype,
-				stage,
+		if create_requested and explicit_doctype and explicit_doctype.lower() != state_doctype.lower():
+			continue_requested = False
+			show_save_requested = False
+		else:
+			stage = "show_save_only" if show_save_requested else "fill_more"
+			target = _resolve_doctype_target(state_doctype, ctx, fallback_doctype=state_doctype)
+			doctype = str(target.get("doctype") or state_doctype).strip()
+			route = str(target.get("route") or f"/app/{_doctype_to_slug(doctype)}")
+			menu_path = target.get("menu_path") or [doctype]
+			reply = _continue_tutorial_reply(lang, doctype, stage)
+			guide = _build_guide_payload(
+				doctype=doctype,
+				route=route,
+				menu_path=menu_path,
+				stage=stage,
 				stock_entry_type_preference=_pick_stock_entry_type(doctype),
-			),
-		)
+			)
+			return _build_training_reply(
+				reply=reply,
+				guide=guide,
+				tutor_state=_coach_state(
+					doctype,
+					stage,
+					stock_entry_type_preference=_pick_stock_entry_type(doctype),
+				),
+			)
 
 	if create_requested or intent_doctype:
-		target_seed = intent_doctype or text
-		target = _resolve_doctype_target(target_seed, ctx, allow_context_fallback=not bool(intent_doctype))
+		target = _resolve_training_target(allow_context_fallback=True)
 		if not target:
 			return _build_training_reply(
 				reply=_target_clarify_reply(lang),

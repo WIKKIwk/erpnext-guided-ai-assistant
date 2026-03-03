@@ -277,14 +277,12 @@ def _normalize_plan(
 		fieldtype = _as_text(field.get("fieldtype")).lower()
 		if fieldtype in {"int", "float", "currency"} and not re.fullmatch(r"-?\d+(\.\d+)?", value):
 			value = "1"
-			if fieldtype == "select":
-				options = field.get("options") if isinstance(field.get("options"), list) else []
-				if options and value not in options:
-					preferred = (
-						_stock_entry_preferred_order(stock_entry_type_preference) if fieldname == "stock_entry_type" else []
-					)
-					fallback_opt = _pick_select_option(options, preferred=preferred)
-					value = fallback_opt or value or "Demo"
+		if fieldtype == "select":
+			options = field.get("options") if isinstance(field.get("options"), list) else []
+			if options and value not in options:
+				preferred = _stock_entry_preferred_order(stock_entry_type_preference) if fieldname == "stock_entry_type" else []
+				fallback_opt = _pick_select_option(options, preferred=preferred)
+				value = fallback_opt or value or "Demo"
 		if not value:
 			value = "Demo"
 		out.append({"fieldname": fieldname, "value": value, "reason": reason})
