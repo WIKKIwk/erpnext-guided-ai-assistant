@@ -219,16 +219,17 @@
 			const fromX = Number(this.cursorPosX) || x;
 			const fromY = Number(this.cursorPosY) || y;
 			const dist = Math.hypot(x - fromX, y - fromY);
-			const adaptive = clamp(Math.round(210 + dist * 0.55), 220, 780);
+			// Slower "teaching pace": user can follow cursor path and understand steps.
+			const adaptive = clamp(Math.round(320 + dist * 0.9), 360, 1400);
 			const preferred = Number(preferredDuration);
-			const duration = preferred > 0 ? clamp(Math.round((preferred + adaptive) / 2), 180, 860) : adaptive;
+			const duration = preferred > 0 ? clamp(Math.round((preferred + adaptive) / 2), 320, 1400) : adaptive;
 			return { duration, distance: dist };
 		}
 
 		computeHoverPause(distance, customPause = 0) {
 			const custom = Number(customPause);
-			if (custom > 0) return clamp(custom, 80, 260);
-			return clamp(Math.round(120 + Math.min(distance, 220) * 0.28), 120, 180);
+			if (custom > 0) return clamp(custom, 120, 360);
+			return clamp(Math.round(170 + Math.min(distance, 260) * 0.42), 180, 340);
 		}
 
 		moveCursorTo(target, preferredDuration = 0) {
@@ -417,7 +418,7 @@
 			if (!this.running || !isVisible(el)) return false;
 			const targetPoint = this.getPreciseTargetPoint(el) || this.getRect(el);
 			const motion = this.moveCursorTo(targetPoint, Number(opts.duration_ms) || 0);
-			const settlePause = clamp(Math.round((motion?.duration || 300) * 0.22), 90, 220);
+			const settlePause = clamp(Math.round((motion?.duration || 300) * 0.32), 150, 340);
 			await this.sleep((motion?.duration || 300) + settlePause);
 			if (opts.click) {
 				const resolved = this.resolveExactClickPoint(el, targetPoint);
@@ -425,7 +426,7 @@
 				const dx = Math.abs((resolved.point?.x || 0) - (targetPoint?.x || 0));
 				const dy = Math.abs((resolved.point?.y || 0) - (targetPoint?.y || 0));
 				if (dx > 1 || dy > 1) {
-					const correctMotion = this.moveCursorTo(resolved.point, 120);
-					await this.sleep((correctMotion?.duration || 120) + 40);
+					const correctMotion = this.moveCursorTo(resolved.point, 220);
+					await this.sleep((correctMotion?.duration || 220) + 80);
 				}
 				const hoverPause = this.computeHoverPause(motion?.distance || 0, opts.pre_click_pause_ms);
