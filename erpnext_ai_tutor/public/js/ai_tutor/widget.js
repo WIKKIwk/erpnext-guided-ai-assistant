@@ -206,12 +206,29 @@
 			};
 		}
 
-		getDraftStorageKey(routeKey = "") {
+		getDraftScopeKey(routeKey = "") {
+			const activeConversation = String(this.activeConversationId || "").trim();
+			if (activeConversation) {
+				return `conv:${activeConversation}`;
+			}
+			const route = String(routeKey || this.routeKey || this.getRouteKey() || "")
+				.trim()
+				.slice(0, 220);
+			return `route:${route}`;
+		}
+
+		getLegacyRouteDraftStorageKey(routeKey = "") {
 			const user = String(frappe?.session?.user || "Guest").trim() || "Guest";
 			const route = String(routeKey || this.routeKey || this.getRouteKey() || "")
 				.trim()
 				.slice(0, 220);
 			return `${DRAFT_STORAGE_PREFIX}:${window.location.host}:${user}:${route}`;
+		}
+
+		getDraftStorageKey(routeKey = "") {
+			const user = String(frappe?.session?.user || "Guest").trim() || "Guest";
+			const scope = this.getDraftScopeKey(routeKey);
+			return `${DRAFT_STORAGE_PREFIX}:${window.location.host}:${user}:${scope}`;
 		}
 
 		saveDraft(routeKey = "") {
@@ -232,9 +249,18 @@
 		loadDraftForRoute(routeKey = "") {
 			if (!window.localStorage || !this.$input) return;
 			const key = this.getDraftStorageKey(routeKey);
+			const legacyRouteKey = this.getLegacyRouteDraftStorageKey(routeKey);
 			let value = "";
 			try {
 				value = String(window.localStorage.getItem(key) || "");
+				// Backward compatibility: migrate route-based draft to conversation-based key.
+				if (!value && legacyRouteKey && legacyRouteKey !== key) {
+					const legacy = String(window.localStorage.getItem(legacyRouteKey) || "");
+					if (legacy) {
+						value = legacy;
+						window.localStorage.setItem(key, legacy);
+					}
+				}
 			} catch {
 				value = "";
 			}
@@ -245,8 +271,12 @@
 		clearDraft(routeKey = "") {
 			if (!window.localStorage) return;
 			const key = this.getDraftStorageKey(routeKey);
+			const legacyRouteKey = this.getLegacyRouteDraftStorageKey(routeKey);
 			try {
 				window.localStorage.removeItem(key);
+				if (legacyRouteKey && legacyRouteKey !== key) {
+					window.localStorage.removeItem(legacyRouteKey);
+				}
 			} catch {
 				// ignore
 			}
