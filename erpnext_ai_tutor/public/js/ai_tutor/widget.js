@@ -41,6 +41,42 @@
 	const DRAWER_CLOSE_ANIM_MS = 280;
 	const TYPEWRITER_TARGET_MIN_MS = 5200;
 	const TYPEWRITER_TARGET_MAX_MS = 14000;
+	const ROUTE_NON_ENTITY_PARTS = new Set([
+		"app",
+		"view",
+		"list",
+		"new",
+		"form",
+		"tree",
+		"report",
+		"dashboard",
+		"calendar",
+		"kanban",
+		"gantt",
+		"map",
+		"workspace",
+		"module",
+		"home",
+	]);
+	const ROUTE_MODULE_PARTS = new Set([
+		"accounting",
+		"buying",
+		"selling",
+		"stock",
+		"assets",
+		"manufacturing",
+		"quality",
+		"projects",
+		"support",
+		"users",
+		"website",
+		"crm",
+		"tools",
+		"integrations",
+		"build",
+		"setup",
+		"automation",
+	]);
 	const ICONS = Object.freeze({
 		fab: `
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
@@ -233,6 +269,20 @@
 			return token;
 		}
 
+		getRouteEntityKeys(pathRaw) {
+			const parts = this.getAppRouteParts(pathRaw).map((x) => this.normalizeRouteLeafToken(x)).filter(Boolean);
+			if (!parts.length) return [];
+			const keys = [];
+			for (const part of parts) {
+				if (!part || ROUTE_NON_ENTITY_PARTS.has(part) || ROUTE_MODULE_PARTS.has(part)) continue;
+				if (/^\d+$/.test(part)) continue;
+				if (/^[a-f0-9]{8,}$/i.test(part)) continue;
+				keys.push(part);
+			}
+			if (!keys.length && parts[0]) keys.push(parts[0]);
+			return Array.from(new Set(keys));
+		}
+
 		isRouteActive(routeRaw) {
 			const targetPath = this.normalizeRoutePath(routeRaw);
 			const currentPath = this.normalizeRoutePath(window.location.pathname || "");
@@ -250,7 +300,12 @@
 			// Treat canonical list aliases as equal:
 			// /app/item  <=> /app/stock/item
 			// /app/item  <=> /app/item-list
-			return currentParts.length === 1 || targetParts.length === 1;
+			if (currentParts.length === 1 || targetParts.length === 1) return true;
+
+			const currentKeys = this.getRouteEntityKeys(currentPath);
+			const targetKeys = this.getRouteEntityKeys(targetPath);
+			if (!currentKeys.length || !targetKeys.length) return false;
+			return currentKeys.some((key) => targetKeys.includes(key));
 		}
 
 		isGuideTargetActive(guideRaw) {
@@ -716,12 +771,12 @@
 				}
 
 				let reachedTarget = Boolean(runResult?.ok && runResult?.reached_target);
-				if (!reachedTarget && guide?.route && this.guideRunner?.isAtRoute(guide.route)) {
+				if (!reachedTarget && guide?.route && this.isRouteActive(guide.route)) {
 					reachedTarget = true;
 				}
 				if (!reachedTarget && guide?.route) {
 					await new Promise((resolve) => window.setTimeout(resolve, 360));
-					if (this.guideRunner?.isAtRoute(guide.route)) reachedTarget = true;
+					if (this.isRouteActive(guide.route)) reachedTarget = true;
 				}
 
 				if (reachedTarget) {
