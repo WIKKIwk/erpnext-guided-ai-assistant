@@ -1296,6 +1296,7 @@
 					const fieldtype = String(df?.fieldtype || "").trim();
 					const label = String(df?.label || df?.fieldname || "Field").trim();
 					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
+					if (this.isEmailField(df)) return this.makeDemoEmail(df);
 					if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) return "1";
 					if (fieldtype === "Select") {
 						const preferred =
@@ -1304,6 +1305,32 @@
 					}
 					if (fieldtype === "Link") return "";
 					return `Demo ${label}`;
+				}
+
+				isEmailField(df) {
+					const fieldtype = String(df?.fieldtype || "").trim().toLowerCase();
+					const options = String(df?.options || "").trim().toLowerCase();
+					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
+					const label = String(df?.label || "").trim().toLowerCase();
+					if (fieldtype === "email") return true;
+					if (options === "email" || options.includes("email")) return true;
+					if (fieldname.includes("email") || label.includes("email")) return true;
+					return false;
+				}
+
+				isValidEmailValue(value) {
+					const text = String(value || "").trim();
+					return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+				}
+
+				makeDemoEmail(df) {
+					const rawBase = String(df?.fieldname || df?.label || "user")
+						.trim()
+						.toLowerCase()
+						.replace(/[^a-z0-9]+/g, ".")
+						.replace(/^\.+|\.+$/g, "");
+					const base = rawBase || "user";
+					return `demo.${base}@example.com`;
 				}
 
 				buildMergedFieldPlans(doctype, stage, plannedRows = [], fallbackPlans = []) {
@@ -1382,6 +1409,10 @@
 					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
 					if (fieldname === "stock_entry_type") {
 						return await this.resolveSafeStockEntryType(rawValue);
+					}
+					if (this.isEmailField(df)) {
+						const wanted = String(rawValue || "").trim();
+						return this.isValidEmailValue(wanted) ? wanted : this.makeDemoEmail(df);
 					}
 					if (fieldtype === "Link") {
 						const linkDoctype = String(df?.options || "").trim();
