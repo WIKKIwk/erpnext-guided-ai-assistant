@@ -1818,19 +1818,10 @@
 						if (!input) {
 							const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
 							if (modelOnlyOk) {
-								const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
-								if (confirmed) {
-									filled += 1;
-									if (!filledLabels.includes(label)) filledLabels.push(label);
-									this.emitProgress(
-										`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi, sababi: ${reason}.`
-									);
-								} else {
-									if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
-									this.emitProgress(
-										`ℹ️ **${label}** uchun qiymat model fallback orqali berildi, lekin UI'da aniq tasdiqlanmagani uchun hisobga qo'shmadim.`
-									);
-								}
+								if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+								this.emitProgress(
+									`ℹ️ **${label}** uchun qiymat model fallback orqali berildi, lekin UI harakati bo'lmagani uchun asosiy countga qo'shmadim.`
+								);
 							} else {
 								this.emitProgress(`⚠️ **${label}** maydoni UIda topilmadi va model orqali ham to'ldirib bo'lmadi.`);
 							}
@@ -1846,30 +1837,24 @@
 
 						const ok = await this.typeIntoInput(input, valueToType);
 						await this.sleep(120);
-						const afterVal = this.readFieldValue(fieldname);
-						const reallyFilled = ok && this.isFieldValueFilled(df, afterVal) && !this.isControlInvalid(fieldname);
+						const reallyFilled = ok
+							? await this.verifyVisibleFieldConfirmation(fieldname, df, label, valueToType)
+							: false;
 						if (reallyFilled) {
-							filled += 1;
-							filledLabels.push(label);
+							if (!filledLabels.includes(label)) {
+								filled += 1;
+								filledLabels.push(label);
+							}
 							this.emitProgress(
 								`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi, sababi: ${reason}.`
 							);
 						} else {
 							const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
 							if (fallbackOk) {
-								const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
-								if (confirmed) {
-									filled += 1;
-									if (!filledLabels.includes(label)) filledLabels.push(label);
-									this.emitProgress(
-										`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi, sababi: ${reason}.`
-									);
-								} else {
-									if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
-									this.emitProgress(
-										`ℹ️ **${label}** model fallback bilan berildi, lekin UI tasdiqlamagani uchun asosiy countga qo'shmadim.`
-									);
-								}
+								if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+								this.emitProgress(
+									`ℹ️ **${label}** model fallback bilan berildi, lekin UI tasdiqlamagani uchun asosiy countga qo'shmadim.`
+								);
 							} else {
 								this.emitProgress(`⚠️ **${label}** qiymati form tomonidan qabul qilinmadi, qayta tekshirish kerak.`);
 							}
@@ -1910,16 +1895,8 @@
 								if (!input) {
 									const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
 									if (modelOnlyOk) {
-										const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
-										if (confirmed) {
-											filled += 1;
-											roundProgress = true;
-											if (!filledLabels.includes(label)) filledLabels.push(label);
-											this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
-										} else {
-											if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
-											failedRequired.add(fieldname);
-										}
+										if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+										failedRequired.add(fieldname);
 									} else {
 										failedRequired.add(fieldname);
 									}
@@ -1937,26 +1914,21 @@
 							}
 							const ok = await this.typeIntoInput(input, valueToType);
 							await this.sleep(120);
-							const afterVal = this.readFieldValue(fieldname);
-							const reallyFilled = ok && this.isFieldValueFilled(df, afterVal) && !this.isControlInvalid(fieldname);
+							const reallyFilled = ok
+								? await this.verifyVisibleFieldConfirmation(fieldname, df, label, valueToType)
+								: false;
 								if (reallyFilled) {
-									filled += 1;
+									if (!filledLabels.includes(label)) {
+										filled += 1;
+										filledLabels.push(label);
+									}
 									roundProgress = true;
-									if (!filledLabels.includes(label)) filledLabels.push(label);
 									this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
 								} else {
 									const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
 									if (fallbackOk) {
-										const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
-										if (confirmed) {
-											filled += 1;
-											roundProgress = true;
-											if (!filledLabels.includes(label)) filledLabels.push(label);
-											this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
-										} else {
-											if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
-											failedRequired.add(fieldname);
-										}
+										if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+										failedRequired.add(fieldname);
 									} else {
 										failedRequired.add(fieldname);
 									}
@@ -2039,14 +2011,33 @@
 						}
 					}
 
-					async verifyVisibleFieldConfirmation(fieldname, df, label = "") {
+					async verifyVisibleFieldConfirmation(fieldname, df, label = "", expectedValue = "") {
 						const key = String(fieldname || "").trim();
 						if (!key) return false;
 						await this.ensureFieldTabVisible(key, label || this.getFieldLabel(key));
 						const input = this.findFieldInput(key, { allowHidden: false });
 						if (!input) return false;
 						const value = this.readFieldValue(key);
-						return this.isFieldValueFilled(df, value) && !this.isControlInvalid(key);
+						if (!this.isFieldValueFilled(df, value) || this.isControlInvalid(key)) return false;
+						const fieldtype = String(df?.fieldtype || "").trim();
+						const docText = String(value ?? "").trim();
+						const inputText = String(input.value ?? "").trim();
+						const wantedText = String(expectedValue ?? "").trim();
+						if (this.isEmailField(df) && !this.isValidEmailValue(docText)) return false;
+						if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) {
+							if (!/^-?\d+(\.\d+)?$/.test(docText)) return false;
+						}
+						if (fieldtype === "Link") {
+							// Link maydonda faqat UI va model qiymati mos bo'lsa "tasdiqlandi" deymiz.
+							if (!inputText || !docText) return false;
+							if (wantedText && docText !== wantedText && inputText !== wantedText) return false;
+							const inputNorm = inputText.toLowerCase();
+							const docNorm = docText.toLowerCase();
+							if (docNorm !== inputNorm && !docNorm.includes(inputNorm) && !inputNorm.includes(docNorm)) {
+								return false;
+							}
+						}
+						return true;
 					}
 
 				async getItemsGridInput(row, fieldname) {
@@ -2409,7 +2400,7 @@
 								reached_target: true,
 								message:
 									filled > 0
-										? `${filled} ta maydonni to'ldirdim (${filledLabels.join(
+										? `UI tasdiqlagan ${filled} ta maydon to'ldirildi (${filledLabels.join(
 												", "
 											)}), lekin dars tugamadi. Majburiy maydonlar qolgan: ${missingRequiredLabels.join(", ")}.${
 												backgroundFilledLabels.length
@@ -2421,17 +2412,17 @@
 											)}. Avval shu maydonlarni to'ldiramiz.`,
 							};
 						}
-					this.emitProgress(
-						filled > 0
-							? `🎯 To'ldirilgan maydonlar: ${filledLabels.join(", ")}. Endi keyingi bosqichga o'tish mumkin.`
-							: "⚠️ To'ldirishga mos maydon topilmadi."
-					);
+						this.emitProgress(
+							filled > 0
+								? `🎯 UI tasdiqlagan maydonlar: ${filledLabels.join(", ")}. Endi keyingi bosqichga o'tish mumkin.`
+								: "⚠️ To'ldirishga mos maydon topilmadi."
+						);
 						return {
 							ok: true,
 							reached_target: true,
 							message:
 								filled > 0
-									? `${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}.${
+									? `UI tasdiqlagan ${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}.${
 											backgroundFilledLabels.length
 												? ` UI tasdiqlanmagan maydonlar hisobga olinmadi: ${backgroundFilledLabels.join(", ")}.`
 												: ""
