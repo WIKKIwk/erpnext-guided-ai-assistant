@@ -64,6 +64,7 @@ def maybe_handle_training_flow(
 		state_doctype=state_doctype,
 		explicit_doctype=explicit_doctype,
 		intent_doctype=intent_doctype,
+		create_requested=create_requested,
 		continue_requested=continue_requested,
 		show_save_requested=show_save_requested,
 		practical_tutorial_requested=practical_tutorial_requested,

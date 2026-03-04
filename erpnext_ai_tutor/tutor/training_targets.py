@@ -161,7 +161,8 @@ def _extract_doctype_mention_from_text(user_message: str) -> str:
 		if not name:
 			continue
 		name_norm = _normalize_text_for_match(name)
-		if not name_norm or len(name_norm) < 4:
+		is_short_acronym = bool(re.fullmatch(r"[A-Z0-9]{2,6}", name))
+		if not name_norm or (len(name_norm) < 4 and not is_short_acronym):
 			continue
 		if f" {name_norm} " not in wrapped_text:
 			continue

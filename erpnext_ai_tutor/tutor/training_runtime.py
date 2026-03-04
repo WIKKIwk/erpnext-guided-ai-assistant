@@ -15,6 +15,7 @@ def _resolve_training_target(
 	state_doctype: str,
 	explicit_doctype: str,
 	intent_doctype: str,
+	create_requested: bool,
 	continue_requested: bool,
 	show_save_requested: bool,
 	practical_tutorial_requested: bool,
@@ -51,6 +52,7 @@ def _resolve_training_target(
 				and intent_dt
 				and context_dt
 				and intent_dt != context_dt
+				and not create_requested
 				and (continue_requested or show_save_requested or practical_tutorial_requested)
 			):
 				return context_target

@@ -40,6 +40,7 @@ from erpnext_ai_tutor.tutor.training_handlers import (  # noqa: E402
 	_handle_pending_target,
 )
 from erpnext_ai_tutor.tutor.training_runtime import _resolve_training_target  # noqa: E402
+from erpnext_ai_tutor.tutor.training_targets import _extract_doctype_mention_from_text  # noqa: E402
 
 
 class TrainingFlowLogicTests(unittest.TestCase):
@@ -108,6 +109,7 @@ class TrainingFlowLogicTests(unittest.TestCase):
 				state_doctype="Sales Invoice",
 				explicit_doctype="",
 				intent_doctype="",
+				create_requested=False,
 				continue_requested=False,
 				show_save_requested=False,
 				practical_tutorial_requested=False,
@@ -117,6 +119,52 @@ class TrainingFlowLogicTests(unittest.TestCase):
 			)
 		self.assertEqual(result.get("doctype"), "Customer")
 		resolve_fallback.assert_not_called()
+
+	def test_runtime_prefers_intent_target_for_create_request_even_if_context_exists(self):
+		context_target = {"doctype": "User", "route": "/app/user", "menu_path": ["Users", "User"]}
+		intent_target = {"doctype": "BOM", "route": "/app/bom", "menu_path": ["Manufacturing", "BOM"]}
+
+		def _target_from_doctype_side_effect(doctype: str):
+			if doctype == "User":
+				return context_target
+			return {}
+
+		def _resolve_doctype_target_side_effect(user_message: str, ctx, fallback_doctype="", allow_context_fallback=True):  # noqa: ANN001, ANN201
+			if str(user_message or "").strip() == "BOM":
+				return intent_target
+			return {}
+
+		with patch(
+			"erpnext_ai_tutor.tutor.training_runtime._target_from_doctype",
+			side_effect=_target_from_doctype_side_effect,
+		), patch(
+			"erpnext_ai_tutor.tutor.training_runtime._resolve_doctype_target",
+			side_effect=_resolve_doctype_target_side_effect,
+		):
+			result = _resolve_training_target(
+				explicit_target={},
+				context_doctype="User",
+				state_action="create_record",
+				state_doctype="User",
+				explicit_doctype="",
+				intent_doctype="BOM",
+				create_requested=True,
+				continue_requested=True,
+				show_save_requested=False,
+				practical_tutorial_requested=True,
+				text_rules="bom ochishni o'rgat",
+				ctx={},
+				allow_context_fallback=True,
+			)
+		self.assertEqual(result.get("doctype"), "BOM")
+
+	def test_extract_doctype_alias_bom_from_text(self):
+		with patch(
+			"erpnext_ai_tutor.tutor.training_targets._is_real_doctype",
+			side_effect=lambda name: str(name or "").strip() == "BOM",
+		):
+			result = _extract_doctype_mention_from_text("endi menga bom ochishni o'rgat")
+		self.assertEqual(result, "BOM")
 
 
 if __name__ == "__main__":

@@ -53,6 +53,8 @@ AI_TARGET_ALIASES = {
 	"users": "User",
 	"foydalanuvchi": "User",
 	"foydalanuvchilar": "User",
+	"bom": "BOM",
+	"bill of materials": "BOM",
 }
 ALLOWED_INTENT_ACTIONS = {"create_record", "continue", "show_save", "other"}
 
