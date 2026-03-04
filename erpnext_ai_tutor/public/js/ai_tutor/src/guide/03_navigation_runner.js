@@ -128,7 +128,19 @@
 					}
 				}
 				if (result.ok && isTutorial) {
-					const tutorialResult = await this.runCreateRecordTutorial(guide);
+					let tutorialResult = null;
+					try {
+						tutorialResult = await this.runCreateRecordTutorial(guide);
+					} catch (err) {
+						await this.flushTutorialTrace("tutorial_exception", {
+							error: String(err?.message || err || "").trim(),
+						});
+						tutorialResult = {
+							ok: false,
+							reached_target: false,
+							message: "Tutorial jarayonida kutilmagan xatolik bo'ldi.",
+						};
+					}
 					if (!tutorialResult?.ok) {
 						result = {
 							ok: false,

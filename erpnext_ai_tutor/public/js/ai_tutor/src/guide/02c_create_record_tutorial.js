@@ -7,36 +7,54 @@
 							: "";
 					this._allowDependencyCreation = guide?.tutorial?.allow_dependency_creation === true;
 					const stage = String(guide?.tutorial?.stage || "open_and_fill_basic").trim().toLowerCase();
+					this.startTutorialTrace({
+						doctype,
+						stage,
+						route: String(guide?.route || "").trim(),
+						allow_dependency_creation: Boolean(this._allowDependencyCreation),
+					});
 					this.emitProgress(`🚀 **${doctype}** bo'yicha amaliy ko'rsatishni boshladim.`);
 					if (this._allowDependencyCreation) {
 						this.emitProgress("🧰 Kerakli bog'liq masterlar topilmasa, demo uchun avtomatik yaratib davom etaman.");
 					}
+					const finish = async (result, reason = "", extra = {}) => {
+						return await this.finishTutorialTrace(result, reason, extra);
+					};
 
 				if (!this.isOnDoctypeNewForm(doctype)) {
-					if (guide.route && !this.isAtRoute(guide.route)) {
-						const openedList = await this.navigate(guide.route);
-						if (!openedList) {
-							return { ok: false, message: "Kerakli bo'limni ochib bo'lmadi, qayta urinib ko'ring." };
+						if (guide.route && !this.isAtRoute(guide.route)) {
+							const openedList = await this.navigate(guide.route);
+							if (!openedList) {
+								return await finish(
+									{ ok: false, message: "Kerakli bo'limni ochib bo'lmadi, qayta urinib ko'ring." },
+									"open_section_failed"
+								);
+							}
 						}
-					}
 					const createBtn = await this.waitFor(() => this.findCreateActionButton(), 3200, 120);
-					if (!createBtn) {
-						const openedByFallback = await this.openNewDocFallback(doctype);
-						if (!openedByFallback) {
-							return { ok: false, message: 'Yangi yozuv ochish tugmasini topa olmadim ("Add/New/Create").' };
-						}
-					} else {
+						if (!createBtn) {
+							const openedByFallback = await this.openNewDocFallback(doctype);
+							if (!openedByFallback) {
+								return await finish(
+									{ ok: false, message: 'Yangi yozuv ochish tugmasini topa olmadim ("Add/New/Create").' },
+									"create_button_missing"
+								);
+							}
+						} else {
 						const clicked = await this.focusElement(createBtn, 'Yangi yozuv ochish uchun "Add/New" tugmasini bosamiz.', {
 							click: true,
 							duration_ms: 320,
 							pre_click_pause_ms: 120,
 						});
-						if (!clicked) {
-							const openedByFallback = await this.openNewDocFallback(doctype);
-							if (!openedByFallback) {
-								return { ok: false, message: "Yangi yozuv tugmasini xavfsiz bosib bo'lmadi." };
-							}
-						} else {
+							if (!clicked) {
+								const openedByFallback = await this.openNewDocFallback(doctype);
+								if (!openedByFallback) {
+									return await finish(
+										{ ok: false, message: "Yangi yozuv tugmasini xavfsiz bosib bo'lmadi." },
+										"create_button_click_failed"
+									);
+								}
+							} else {
 							this.emitProgress("➕ `Add/New` bosildi, endi forma turini tekshiryapman.");
 							await this.waitFor(() => this.isOnDoctypeNewForm(doctype) || this.isQuickEntryOpen(), 5200, 120);
 						}
@@ -54,10 +72,13 @@
 							});
 						}
 					}
-					const fullFormBtn = this.findQuickEntryActionButton("edit_full_form");
-					if (!fullFormBtn) {
-						return { ok: false, message: '"Edit Full Form" tugmasini topa olmadim.' };
-					}
+						const fullFormBtn = this.findQuickEntryActionButton("edit_full_form");
+						if (!fullFormBtn) {
+							return await finish(
+								{ ok: false, message: '"Edit Full Form" tugmasini topa olmadim.' },
+								"quick_entry_full_form_missing"
+							);
+						}
 					const openedFullForm = await this.focusElement(
 						fullFormBtn,
 						'"Edit Full Form" ni bosib to\'liq formaga o\'tamiz.',
@@ -73,13 +94,13 @@
 					}
 				}
 
-				if (!this.isOnDoctypeNewForm(doctype)) {
-					return {
-						ok: false,
-						reached_target: false,
-						message: "Quick Entry oynasidan to'liq formaga o'tib bo'lmadi. Iltimos qayta urinib ko'ring.",
-					};
-				}
+					if (!this.isOnDoctypeNewForm(doctype)) {
+						return await finish({
+							ok: false,
+							reached_target: false,
+							message: "Quick Entry oynasidan to'liq formaga o'tib bo'lmadi. Iltimos qayta urinib ko'ring.",
+						}, "full_form_open_failed");
+					}
 
 				if (stage === "show_save_only") {
 					const saveBtn = await this.waitFor(() => this.findSaveActionButton(), 2000, 120);
@@ -89,17 +110,21 @@
 							duration_ms: 280,
 						});
 					}
-					this.emitProgress('💾 `Save/Submit` joyini ko\'rsatdim, lekin xavfsizlik uchun bosmadim.');
-					return {
-						ok: true,
-						reached_target: true,
-						message: 'Save/Submit tugmasini ko\'rsatdim. Xavfsizlik uchun uni avtomatik bosmadim.',
-					};
-				}
+						this.emitProgress('💾 `Save/Submit` joyini ko\'rsatdim, lekin xavfsizlik uchun bosmadim.');
+						return await finish({
+							ok: true,
+							reached_target: true,
+							message: 'Save/Submit tugmasini ko\'rsatdim. Xavfsizlik uchun uni avtomatik bosmadim.',
+						}, "show_save_only_done");
+					}
 
 				this.emitProgress("🧠 AI mavjud maydonlarni tahlil qilib, aqlli to'ldirish rejasini tuzyapti.");
-				const planResult = await this.requestAIFieldPlan(doctype, stage === "fill_more" ? "fill_more" : "open_and_fill_basic");
-				if (Array.isArray(planResult.plan) && planResult.plan.length) {
+					const planResult = await this.requestAIFieldPlan(doctype, stage === "fill_more" ? "fill_more" : "open_and_fill_basic");
+					this.traceTutorialEvent("plan.primary", {
+						source: String(planResult?.source || "").trim(),
+						count: Array.isArray(planResult?.plan) ? planResult.plan.length : 0,
+					});
+					if (Array.isArray(planResult.plan) && planResult.plan.length) {
 					this.emitProgress(
 						`🗺️ Reja tayyor: ${planResult.plan.length} ta qadam (${String(planResult.source || "ai")}). Endi amalda to'ldiraman.`
 					);
@@ -152,13 +177,22 @@
 						blockedLinkHints = [...new Set([...blockedLinkHints, ...blocked])];
 					};
 
-					const fillResult = await this.fillFormFields(doctype, stageToRun, planResult.plan);
-					mergeFillStats(fillResult);
+						const fillResult = await this.fillFormFields(doctype, stageToRun, planResult.plan);
+						mergeFillStats(fillResult);
+						this.traceTutorialEvent("fill.primary", {
+							filled: Number(fillResult?.filled || 0),
+							missing_required: Array.isArray(fillResult?.missingRequiredLabels) ? fillResult.missingRequiredLabels.length : 0,
+							blocked_links: Array.isArray(fillResult?.blockedLinkHints) ? fillResult.blockedLinkHints.length : 0,
+						});
 
 					// Always do one deeper pass so tutor fills more than a single field when possible.
 					if (stageToRun !== "fill_more" && this.running) {
 						this.emitProgress("🔍 Qo'shimcha batafsil pass: yana ko'proq mos maydonlarni to'ldirishga harakat qilaman.");
-						const deepPlanResult = await this.requestAIFieldPlan(doctype, "fill_more");
+							const deepPlanResult = await this.requestAIFieldPlan(doctype, "fill_more");
+							this.traceTutorialEvent("plan.deep", {
+								source: String(deepPlanResult?.source || "").trim(),
+								count: Array.isArray(deepPlanResult?.plan) ? deepPlanResult.plan.length : 0,
+							});
 						if (Array.isArray(deepPlanResult.plan) && deepPlanResult.plan.length) {
 							this.emitProgress(
 								`🧭 Batafsil reja: ${deepPlanResult.plan.length} ta qo'shimcha qadam (${String(
@@ -166,14 +200,27 @@
 								)}).`
 							);
 						}
-						const deepFillResult = await this.fillFormFields(doctype, "fill_more", deepPlanResult.plan);
-						mergeFillStats(deepFillResult);
-					}
+							const deepFillResult = await this.fillFormFields(doctype, "fill_more", deepPlanResult.plan);
+							mergeFillStats(deepFillResult);
+							this.traceTutorialEvent("fill.deep", {
+								filled: Number(deepFillResult?.filled || 0),
+								missing_required: Array.isArray(deepFillResult?.missingRequiredLabels)
+									? deepFillResult.missingRequiredLabels.length
+									: 0,
+								blocked_links: Array.isArray(deepFillResult?.blockedLinkHints) ? deepFillResult.blockedLinkHints.length : 0,
+							});
+						}
 
-					const requiredItemsTableResult = await this.fillRequiredItemsTableDemo();
-					mergeFillStats(requiredItemsTableResult);
+						const requiredItemsTableResult = await this.fillRequiredItemsTableDemo();
+						mergeFillStats(requiredItemsTableResult);
+						this.traceTutorialEvent("fill.required_items", {
+							filled: Number(requiredItemsTableResult?.filled || 0),
+							blocked_links: Array.isArray(requiredItemsTableResult?.blockedLinkHints)
+								? requiredItemsTableResult.blockedLinkHints.length
+								: 0,
+						});
 
-					if (String(doctype || "").trim().toLowerCase() === "stock entry") {
+						if (String(doctype || "").trim().toLowerCase() === "stock entry") {
 						this.emitProgress("🧠 Stock Entry uchun qator maydonlarini ham aqlli to'ldiraman (Item, Qty, Warehouse).");
 						const stockResult = await this.fillStockEntryLineDemo();
 						const extraFilled = Number(stockResult?.filled || 0);
@@ -183,8 +230,12 @@
 							if (label && !filledLabels.includes(label)) filledLabels.push(label);
 						}
 						const extraBlocked = Array.isArray(stockResult?.blockedLinkHints) ? stockResult.blockedLinkHints : [];
-						blockedLinkHints = [...new Set([...blockedLinkHints, ...extraBlocked])];
-					}
+							blockedLinkHints = [...new Set([...blockedLinkHints, ...extraBlocked])];
+							this.traceTutorialEvent("fill.stock_entry_lines", {
+								filled: extraFilled,
+								blocked_links: extraBlocked.length,
+							});
+						}
 
 					const missingRequiredLabels = this.collectMissingRequiredFields(doctype)
 						.map((x) => String(x.label || x.fieldname || "").trim())
@@ -205,7 +256,7 @@
 									: `ℹ️ Keyingi amaliy bosqichda birga tasdiqlanadigan maydonlar: ${backgroundFilledLabels.join(", ")}.`
 							);
 						}
-						if (missingRequiredLabels.length) {
+							if (missingRequiredLabels.length) {
 							const details = describeBackgroundEntries(backgroundFilledEntries);
 							this.emitProgress(
 								`⚠️ Majburiy maydonlar hali to'lmadi: ${missingRequiredLabels.join(", ")}. Jarayon to'liq tugamadi.`
@@ -213,14 +264,14 @@
 							if (blockedLinkHints.length) {
 								this.emitProgress(`🧩 Bog'liq master yozuvlar kerak: ${blockedLinkHints.join(", ")}.`);
 							}
-							const enableAutoCreateHint =
-								blockedLinkHints.length && !this._allowDependencyCreation
-									? " Agar xohlasangiz `ha, davom et` deb yozing - keyingi urinishda kerakli demo masterlarni yaratib davom etaman."
-									: "";
-								return {
-									ok: true,
-									reached_target: true,
-									message:
+								const enableAutoCreateHint =
+									blockedLinkHints.length && !this._allowDependencyCreation
+										? " Agar xohlasangiz `ha, davom et` deb yozing - keyingi urinishda kerakli demo masterlarni yaratib davom etaman."
+										: "";
+									return await finish({
+										ok: true,
+										reached_target: true,
+										message:
 										filled > 0
 												? `UI tasdiqlagan ${filled} ta maydon to'ldirildi (${filledLabels.join(
 														", "
@@ -231,18 +282,23 @@
 													}${enableAutoCreateHint}`
 											: `Forma ochildi, lekin majburiy maydonlar hali bo'sh: ${missingRequiredLabels.join(
 													", "
-												)}. Avval shu maydonlarni to'ldiramiz.${enableAutoCreateHint}`,
-								};
-							}
+													)}. Avval shu maydonlarni to'ldiramiz.${enableAutoCreateHint}`,
+									}, "stopped_missing_required", {
+										doctype,
+										missing_required: missingRequiredLabels,
+										blocked_links: blockedLinkHints,
+										filled,
+									});
+								}
 						this.emitProgress(
 							filled > 0
 								? `🎯 UI tasdiqlagan maydonlar: ${filledLabels.join(", ")}. Endi keyingi bosqichga o'tish mumkin.`
 								: "⚠️ To'ldirishga mos maydon topilmadi."
 						);
-						return {
-							ok: true,
-							reached_target: true,
-							message:
+							return await finish({
+								ok: true,
+								reached_target: true,
+								message:
 									filled > 0
 										? `UI tasdiqlagan ${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}.${
 												backgroundFilledLabels.length
@@ -250,7 +306,12 @@
 													: ""
 											} Keyingi bosqichni aytsangiz davom etaman.`
 									: backgroundFilledLabels.length
-										? `UIda tasdiqlangan to'ldirish bo'lmadi. Fon fallback bilan qiymat berilgan maydonlar: ${describeBackgroundEntries(backgroundFilledEntries) || backgroundFilledLabels.join(", ")}. Endi ularni birga tekshiramiz.`
-										: "Forma ochildi, lekin avtomatik to'ldirishga mos maydon topilmadi. Qaysi maydondan boshlaymiz?",
-						};
-					}
+											? `UIda tasdiqlangan to'ldirish bo'lmadi. Fon fallback bilan qiymat berilgan maydonlar: ${describeBackgroundEntries(backgroundFilledEntries) || backgroundFilledLabels.join(", ")}. Endi ularni birga tekshiramiz.`
+											: "Forma ochildi, lekin avtomatik to'ldirishga mos maydon topilmadi. Qaysi maydondan boshlaymiz?",
+							}, "tutorial_step_done", {
+								doctype,
+								filled,
+								missing_required: missingRequiredLabels,
+								blocked_links: blockedLinkHints,
+							});
+						}

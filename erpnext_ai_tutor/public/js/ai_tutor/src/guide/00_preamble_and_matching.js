@@ -66,23 +66,112 @@
 				this._runOptions = opts && typeof opts === "object" ? opts : {};
 			}
 
-			emitProgress(message) {
-				const text = String(message || "").trim();
-				if (!text) return;
+				emitProgress(message) {
+					const text = String(message || "").trim();
+					if (!text) return;
 				const now = Date.now();
 				if (text === this._lastProgressText && now - this._lastProgressAt < 480) return;
 				this._lastProgressText = text;
 				this._lastProgressAt = now;
 				const cb = this._runOptions?.onProgress;
 				if (typeof cb !== "function") return;
-				try {
-					cb(text);
-				} catch {
-					// ignore progress callback errors
+					try {
+						cb(text);
+					} catch {
+						// ignore progress callback errors
+					}
+					this.traceTutorialEvent("progress", { text });
 				}
-			}
 
-		normalizeGuide(raw) {
+				sanitizeTraceValue(value, depth = 0) {
+					if (value === null || value === undefined) return value;
+					if (typeof value === "boolean" || typeof value === "number") return value;
+					if (typeof value === "string") {
+						const text = String(value).trim();
+						return text.length > 220 ? `${text.slice(0, 220)}...` : text;
+					}
+					if (depth >= 3) return "[max-depth]";
+					if (Array.isArray(value)) {
+						return value.slice(0, 20).map((x) => this.sanitizeTraceValue(x, depth + 1));
+					}
+					if (typeof value === "object") {
+						const out = {};
+						const keys = Object.keys(value).slice(0, 24);
+						for (const key of keys) {
+							out[String(key)] = this.sanitizeTraceValue(value[key], depth + 1);
+						}
+						return out;
+					}
+					return String(value);
+				}
+
+				startTutorialTrace(meta = {}) {
+					const id = `tt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+					this._tutorialTrace = {
+						trace_id: id,
+						started_at: new Date().toISOString(),
+						started_ms: Date.now(),
+						meta: this.sanitizeTraceValue(meta),
+						events: [],
+						flushed: false,
+					};
+					this.traceTutorialEvent("trace.start", meta);
+				}
+
+				traceTutorialEvent(name, data = {}) {
+					const trace = this._tutorialTrace;
+					if (!trace || trace.flushed) return;
+					if (!Array.isArray(trace.events)) trace.events = [];
+					if (trace.events.length >= 160) return;
+					trace.events.push({
+						at: new Date().toISOString(),
+						rel_ms: Math.max(0, Date.now() - Number(trace.started_ms || Date.now())),
+						name: String(name || "event").trim().slice(0, 90),
+						data: this.sanitizeTraceValue(data),
+					});
+				}
+
+				async flushTutorialTrace(reason = "", extra = {}) {
+					const trace = this._tutorialTrace;
+					if (!trace || trace.flushed) return "";
+					trace.flushed = true;
+					const payload = {
+						trace_id: String(trace.trace_id || "").trim(),
+						started_at: trace.started_at,
+						duration_ms: Math.max(0, Date.now() - Number(trace.started_ms || Date.now())),
+						reason: String(reason || "").trim(),
+						meta: this.sanitizeTraceValue(trace.meta || {}),
+						events: Array.isArray(trace.events) ? trace.events : [],
+						extra: this.sanitizeTraceValue(extra || {}),
+					};
+					try {
+						const res = await frappe.call("erpnext_ai_tutor.api.log_tutorial_trace", {
+							trace: payload,
+							level: payload.reason.includes("failed") || payload.reason.includes("error") ? "warning" : "info",
+						});
+						return String(res?.message?.trace_id || payload.trace_id || "").trim();
+					} catch {
+						return "";
+					} finally {
+						this._tutorialTrace = null;
+					}
+				}
+
+				async finishTutorialTrace(result, reason = "", extra = {}) {
+					this.traceTutorialEvent("trace.finish", {
+						ok: Boolean(result?.ok),
+						reached_target: Boolean(result?.reached_target),
+						reason: String(reason || "").trim(),
+						extra: this.sanitizeTraceValue(extra),
+					});
+					await this.flushTutorialTrace(reason, {
+						result: this.sanitizeTraceValue(result || {}),
+						...this.sanitizeTraceValue(extra || {}),
+					});
+					return result;
+				}
+
+			normalizeGuide(raw) {
 			if (!raw || typeof raw !== "object") return null;
 			if (String(raw.type || "") !== "navigation") return null;
 			const route = String(raw.route || "").trim();

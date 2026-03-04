@@ -1,5 +1,8 @@
 				async fillRequiredItemsTableDemo() {
 					const frm = window.cur_frm;
+					this.traceTutorialEvent("fill_required_items.start", {
+						doctype: String(frm?.doctype || "").trim(),
+					});
 					if (!frm) return { filled: 0, filledLabels: [], blockedLinkHints: [] };
 
 					const metaFields = Array.isArray(frm.meta?.fields) ? frm.meta.fields : [];
@@ -65,11 +68,16 @@
 
 					frm.refresh_field("items");
 					await this.sleep(120);
-					return {
+					const result = {
 						filled,
 						filledLabels,
 						blockedLinkHints: [...new Set(blockedLinkHints)],
 					};
+					this.traceTutorialEvent("fill_required_items.end", {
+						filled: Number(result.filled || 0),
+						blocked_links: Array.isArray(result.blockedLinkHints) ? result.blockedLinkHints.length : 0,
+					});
+					return result;
 				}
 
 				detectStockEntryPurpose() {

@@ -585,9 +585,14 @@
 				return plans.slice(0, limit);
 			}
 
-				async fillFormFields(doctype, stage = "open_and_fill_basic", plannedRows = []) {
-					const fallbackPlans = this.getFormFieldSamplePlans(doctype, stage);
-					const plans = this.buildMergedFieldPlans(doctype, stage, plannedRows, fallbackPlans);
+					async fillFormFields(doctype, stage = "open_and_fill_basic", plannedRows = []) {
+						this.traceTutorialEvent("fill_form.start", {
+							doctype: String(doctype || "").trim(),
+							stage: String(stage || "").trim(),
+							planned_rows: Array.isArray(plannedRows) ? plannedRows.length : 0,
+						});
+						const fallbackPlans = this.getFormFieldSamplePlans(doctype, stage);
+						const plans = this.buildMergedFieldPlans(doctype, stage, plannedRows, fallbackPlans);
 					let filled = 0;
 					const filledLabels = [];
 					const backgroundFilledLabels = [];
@@ -775,16 +780,24 @@
 						}
 						if (!roundProgress) break;
 					}
-					const missingRequired = this.collectMissingRequiredFields(doctype);
-						return {
-							filled,
-							filledLabels,
-							backgroundFilledLabels,
-							backgroundFilledEntries,
-							missingRequiredLabels: missingRequired.map((x) => String(x.label || x.fieldname || "").trim()).filter(Boolean),
-							blockedLinkHints: [...new Set(blockedLinkHints)],
-						};
-					}
+						const missingRequired = this.collectMissingRequiredFields(doctype);
+							const result = {
+								filled,
+								filledLabels,
+								backgroundFilledLabels,
+								backgroundFilledEntries,
+								missingRequiredLabels: missingRequired.map((x) => String(x.label || x.fieldname || "").trim()).filter(Boolean),
+								blockedLinkHints: [...new Set(blockedLinkHints)],
+							};
+						this.traceTutorialEvent("fill_form.end", {
+							doctype: String(doctype || "").trim(),
+							stage: String(stage || "").trim(),
+							filled: Number(result.filled || 0),
+							missing_required: Array.isArray(result.missingRequiredLabels) ? result.missingRequiredLabels.length : 0,
+							blocked_links: Array.isArray(result.blockedLinkHints) ? result.blockedLinkHints.length : 0,
+						});
+						return result;
+						}
 
 
 				async setDocFieldValue(fieldname, value, label, opts = {}) {

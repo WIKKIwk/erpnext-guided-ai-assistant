@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import json
 from typing import Any, Dict, List
+from pathlib import Path
 
 import frappe
 
@@ -206,6 +208,61 @@ def get_link_demo_value(doctype: str, hint: str = "", create_if_missing: int | b
 
 	created = _create_demo_link_record(target_doctype, query)
 	return {"ok": bool(created), "value": created, "created": bool(created)}
+
+
+@frappe.whitelist()
+def log_tutorial_trace(trace: Any | None = None, level: str = "info") -> Dict[str, Any]:
+	"""Persist guided tutorial trace to site logs for debugging stalled cursor flows."""
+	raw = parse_json_arg(trace or {})
+	if not isinstance(raw, dict):
+		return {"ok": False, "trace_id": ""}
+	trace_id = str(raw.get("trace_id") or frappe.generate_hash(length=12)).strip()
+	payload = sanitize(raw)
+	payload["trace_id"] = trace_id
+	payload["user"] = str(frappe.session.user or "Guest").strip()
+	payload["site"] = str(frappe.local.site or "").strip()
+	payload["logged_at"] = frappe.utils.now()
+	message = truncate_json(payload, 128)
+	level_norm = str(level or "info").strip().lower()
+
+	# Always persist raw trace as JSONL for deterministic post-mortem debugging.
+	try:
+		line = json.dumps(payload, ensure_ascii=True)
+	except Exception:
+		line = message
+	_append_tutorial_log_line(line)
+
+	# Keep standard logger output too (best-effort).
+	try:
+		logger = frappe.logger("erpnext_ai_tutor_tutorial", allow_site=True, file_count=20)
+		if level_norm in {"warn", "warning"}:
+			logger.warning(message)
+		elif level_norm == "error":
+			logger.error(message)
+		else:
+			logger.info(message)
+	except Exception:
+		pass
+	return {"ok": True, "trace_id": trace_id}
+
+
+def _append_tutorial_log_line(line: str) -> None:
+	text = str(line or "").strip()
+	if not text:
+		return
+	paths = [Path(frappe.get_site_path("logs", "erpnext_ai_tutor_tutorial.log"))]
+	try:
+		bench_path = Path(frappe.get_bench_path()) / "logs" / "erpnext_ai_tutor_tutorial.log"
+		paths.append(bench_path)
+	except Exception:
+		pass
+	for path in paths:
+		try:
+			path.parent.mkdir(parents=True, exist_ok=True)
+			with path.open("a", encoding="utf-8") as handle:
+				handle.write(text + "\n")
+		except Exception:
+			continue
 
 
 def _sanitize_demo_token(value: str, *, max_len: int = 16) -> str:
