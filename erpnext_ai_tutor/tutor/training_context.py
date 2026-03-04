@@ -16,6 +16,33 @@ from erpnext_ai_tutor.tutor.training_targets import (
 )
 
 
+def _build_field_overrides(intent_field_updates: Any, *, doctype: str) -> Dict[str, Dict[str, Any]]:
+	"""Normalize semantic field-update requests into tutorial override map."""
+	if str(doctype or "").strip().lower() != "user":
+		return {}
+	if not isinstance(intent_field_updates, list):
+		return {}
+	out: Dict[str, Dict[str, Any]] = {}
+	for row in intent_field_updates[:10]:
+		if not isinstance(row, dict):
+			continue
+		fieldname = str(row.get("fieldname") or "").strip().lower()
+		if fieldname != "email":
+			continue
+		overwrite = bool(row.get("overwrite"))
+		value = str(row.get("value") or "").strip()
+		if not overwrite and not value:
+			continue
+		cfg: Dict[str, Any] = {}
+		if overwrite:
+			cfg["overwrite"] = True
+		if value:
+			cfg["value"] = value
+		if cfg:
+			out[fieldname] = cfg
+	return out
+
+
 def _build_training_context(user_message: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
 	text = str(user_message or "").strip()
 	text_rules = _normalize_apostrophes(text)
@@ -30,6 +57,7 @@ def _build_training_context(user_message: str, ctx: Dict[str, Any]) -> Dict[str,
 	intent_action = str(intent.get("action") or "other").strip().lower()
 	intent_doctype = str(intent.get("doctype") or "").strip()
 	intent_allow_dependency_creation = bool(intent.get("allow_dependency_creation"))
+	intent_field_updates = intent.get("field_updates") if isinstance(intent.get("field_updates"), list) else []
 	create_requested = intent_action == "create_record"
 	continue_requested = intent_action == "continue"
 	show_save_requested = intent_action == "show_save"
@@ -63,6 +91,13 @@ def _build_training_context(user_message: str, ctx: Dict[str, Any]) -> Dict[str,
 	# should continue the same guided flow unless user explicitly switches target.
 	if state_action == "create_record" and state_doctype and practical_tutorial_requested and not explicit_doctype and not show_save_requested:
 		continue_requested = True
+	override_doctype = state_doctype or intent_doctype or context_doctype
+	field_overrides = _build_field_overrides(intent_field_updates, doctype=override_doctype)
+	if state_action == "create_record" and state_doctype and field_overrides and not show_save_requested and not manage_roles_requested:
+		# Semantic "change value" requests should continue active guided flow.
+		continue_requested = True
+		create_requested = False
+		practical_tutorial_requested = True
 
 	return {
 		"text_rules": text_rules,
@@ -81,4 +116,5 @@ def _build_training_context(user_message: str, ctx: Dict[str, Any]) -> Dict[str,
 		"explicit_doctype": explicit_doctype,
 		"practical_tutorial_requested": practical_tutorial_requested,
 		"requested_stock_type": requested_stock_type,
+		"field_overrides": field_overrides,
 	}

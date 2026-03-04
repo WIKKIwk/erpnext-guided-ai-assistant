@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from erpnext_ai_tutor.tutor.llm import call_llm
 from erpnext_ai_tutor.tutor.navigation import build_navigation_plan
@@ -10,6 +10,8 @@ from erpnext_ai_tutor.tutor.training_patterns import AI_TARGET_ALIASES, ALLOWED_
 from erpnext_ai_tutor.tutor.training_targets import _doctype_from_slug, _is_real_doctype
 
 INTENT_MAX_TOKENS = 2048
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_ALLOWED_FIELD_UPDATES = {"email"}
 
 
 def _extract_json_payload(text: str) -> Any:
@@ -48,6 +50,13 @@ def _extract_partial_intent_payload(text: str) -> Dict[str, Any] | None:
 	doctype_match = re.search(r'"doctype"\s*:\s*"([^"]*)"', raw, flags=re.IGNORECASE)
 	conf_match = re.search(r'"confidence"\s*:\s*([0-9]*\.?[0-9]+)', raw, flags=re.IGNORECASE)
 	dep_match = re.search(r'"allow_dependency_creation"\s*:\s*(true|false)', raw, flags=re.IGNORECASE)
+	field_updates: List[Dict[str, Any]] = []
+	updates_match = re.search(r'"field_updates"\s*:\s*(\[[\s\S]*?\])', raw, flags=re.IGNORECASE)
+	if updates_match:
+		try:
+			field_updates = _normalize_field_updates(json.loads(updates_match.group(1)))
+		except Exception:
+			field_updates = []
 	try:
 		confidence = float(conf_match.group(1)) if conf_match else 0.4
 	except Exception:
@@ -57,7 +66,40 @@ def _extract_partial_intent_payload(text: str) -> Dict[str, Any] | None:
 		"doctype": str(doctype_match.group(1) or "").strip() if doctype_match else "",
 		"confidence": confidence,
 		"allow_dependency_creation": bool(dep_match and str(dep_match.group(1) or "").lower() == "true"),
+		"field_updates": field_updates,
 	}
+
+
+def _is_valid_email(value: Any) -> bool:
+	text = str(value or "").strip()
+	if not text:
+		return False
+	return bool(_EMAIL_RE.fullmatch(text))
+
+
+def _normalize_field_updates(raw_updates: Any) -> List[Dict[str, Any]]:
+	if not isinstance(raw_updates, list):
+		return []
+	out: List[Dict[str, Any]] = []
+	for row in raw_updates[:10]:
+		if not isinstance(row, dict):
+			continue
+		fieldname = str(row.get("fieldname") or row.get("field") or "").strip().lower()
+		if not fieldname or not _FIELDNAME_RE.match(fieldname):
+			continue
+		if fieldname not in _ALLOWED_FIELD_UPDATES:
+			continue
+		value = str(row.get("value") or "").strip()
+		overwrite = bool(row.get("overwrite")) or bool(value)
+		if fieldname == "email" and value and not _is_valid_email(value):
+			value = ""
+		if not overwrite and not value:
+			continue
+		entry: Dict[str, Any] = {"fieldname": fieldname, "overwrite": overwrite}
+		if value:
+			entry["value"] = value
+		out.append(entry)
+	return out
 
 
 def _coerce_to_real_doctype(candidate: str) -> str:
@@ -133,18 +175,26 @@ def _infer_doctype_with_ai(user_message: str) -> str:
 def _infer_training_intent_with_ai(user_message: str, *, has_active_tutorial: bool) -> Dict[str, Any]:
 	text = str(user_message or "").strip()
 	if not text:
-		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
+		return {
+			"action": "other",
+			"doctype": "",
+			"confidence": 0.0,
+			"allow_dependency_creation": False,
+			"field_updates": [],
+		}
 
 	system_msg = (
 		"You classify ERPNext tutor chat intent.\n"
 		"Return strict JSON only with this schema:\n"
-		"{\"action\":\"create_record|continue|show_save|manage_roles|other\",\"doctype\":\"<DocType or empty>\",\"confidence\":0.0,\"allow_dependency_creation\":false}\n"
+		"{\"action\":\"create_record|continue|show_save|manage_roles|other\",\"doctype\":\"<DocType or empty>\",\"confidence\":0.0,\"allow_dependency_creation\":false,\"field_updates\":[{\"fieldname\":\"...\",\"overwrite\":true,\"value\":\"...\"}]}\n"
 		"Rules:\n"
 		"- Use semantic intent, not just keywords.\n"
 		"- action=create_record when user asks practical teaching/demonstration/filling/new record workflow.\n"
 		"- action=continue when user asks to continue next step in an already running tutorial.\n"
 		"- action=show_save when user asks where save/submit is.\n"
 		"- action=manage_roles when user asks to add/assign/remove roles/permissions for an existing User.\n"
+		"- field_updates should be empty unless user semantically asks changing an already entered form value.\n"
+		"- For User email change requests, set field_updates=[{\"fieldname\":\"email\",\"overwrite\":true,\"value\":\"<new email or empty>\"}].\n"
 		"- action=other for plain chat/small talk/non-tutorial questions.\n"
 		"- doctype must be canonical ERPNext DocType name if clear, else empty.\n"
 		"- For action=manage_roles, prefer doctype=User unless user clearly names another security doctype.\n"
@@ -165,13 +215,25 @@ def _infer_training_intent_with_ai(user_message: str, *, has_active_tutorial: bo
 			max_tokens=INTENT_MAX_TOKENS,
 		)
 	except Exception:
-		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
+		return {
+			"action": "other",
+			"doctype": "",
+			"confidence": 0.0,
+			"allow_dependency_creation": False,
+			"field_updates": [],
+		}
 
 	payload = _extract_json_payload(resp)
 	if not isinstance(payload, dict):
 		payload = _extract_partial_intent_payload(resp)
 	if not isinstance(payload, dict):
-		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
+		return {
+			"action": "other",
+			"doctype": "",
+			"confidence": 0.0,
+			"allow_dependency_creation": False,
+			"field_updates": [],
+		}
 
 	action = str(payload.get("action") or "").strip().lower()
 	if action not in ALLOWED_INTENT_ACTIONS:
@@ -182,13 +244,16 @@ def _infer_training_intent_with_ai(user_message: str, *, has_active_tutorial: bo
 		confidence = 0.0
 	doctype = _coerce_to_real_doctype(str(payload.get("doctype") or "").strip())
 	allow_dependency_creation = bool(payload.get("allow_dependency_creation"))
+	field_updates = _normalize_field_updates(payload.get("field_updates"))
 	if confidence < 0.35:
 		action = "other"
 		doctype = ""
 		allow_dependency_creation = False
+		field_updates = []
 	return {
 		"action": action,
 		"doctype": doctype,
 		"confidence": confidence,
 		"allow_dependency_creation": allow_dependency_creation,
+		"field_updates": field_updates,
 	}

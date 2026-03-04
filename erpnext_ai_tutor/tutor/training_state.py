@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from erpnext_ai_tutor.tutor.training_patterns import (
@@ -8,6 +9,34 @@ from erpnext_ai_tutor.tutor.training_patterns import (
 	ALLOWED_STOCK_ENTRY_TYPES,
 )
 from erpnext_ai_tutor.tutor.training_targets import _normalize_menu_path
+
+_FIELDNAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+def _normalize_field_overrides(raw_overrides: Any) -> Dict[str, Dict[str, Any]]:
+	if not isinstance(raw_overrides, dict):
+		return {}
+	out: Dict[str, Dict[str, Any]] = {}
+	for raw_key, raw_cfg in list(raw_overrides.items())[:10]:
+		fieldname = str(raw_key or "").strip().lower()
+		if not fieldname or not _FIELDNAME_RE.match(fieldname):
+			continue
+		if fieldname != "email":
+			continue
+		if not isinstance(raw_cfg, dict):
+			continue
+		overwrite = bool(raw_cfg.get("overwrite"))
+		value = str(raw_cfg.get("value") or "").strip()[:160]
+		if not overwrite and not value:
+			continue
+		cfg: Dict[str, Any] = {}
+		if overwrite:
+			cfg["overwrite"] = True
+		if value:
+			cfg["value"] = value
+		if cfg:
+			out[fieldname] = cfg
+	return out
 
 
 def _extract_state(ctx: Dict[str, Any]) -> Dict[str, Any]:
@@ -45,6 +74,7 @@ def _build_guide_payload(
 	stage: str,
 	stock_entry_type_preference: str = "",
 	allow_dependency_creation: bool = False,
+	field_overrides: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	clean_stage = stage if stage in ALLOWED_STAGES else "open_and_fill_basic"
 	tutorial: Dict[str, Any] = {
@@ -58,6 +88,9 @@ def _build_guide_payload(
 			tutorial["stock_entry_type_preference"] = pref
 	if allow_dependency_creation:
 		tutorial["allow_dependency_creation"] = True
+	clean_overrides = _normalize_field_overrides(field_overrides)
+	if clean_overrides:
+		tutorial["field_overrides"] = clean_overrides
 	return {
 		"type": "navigation",
 		"route": str(route or "").strip(),

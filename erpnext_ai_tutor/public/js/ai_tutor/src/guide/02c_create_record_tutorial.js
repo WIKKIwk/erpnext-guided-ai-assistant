@@ -6,12 +6,17 @@
 							? this.normalizeStockEntryTypePreference(guide?.tutorial?.stock_entry_type_preference)
 							: "";
 					this._allowDependencyCreation = guide?.tutorial?.allow_dependency_creation === true;
+					this._tutorialFieldOverrides =
+						guide?.tutorial?.field_overrides && typeof guide.tutorial.field_overrides === "object"
+							? guide.tutorial.field_overrides
+							: {};
 					const stage = String(guide?.tutorial?.stage || "open_and_fill_basic").trim().toLowerCase();
 					this.startTutorialTrace({
 						doctype,
 						stage,
 						route: String(guide?.route || "").trim(),
 						allow_dependency_creation: Boolean(this._allowDependencyCreation),
+						field_overrides: Object.keys(this._tutorialFieldOverrides || {}).slice(0, 6),
 					});
 					this.emitProgress(`🚀 **${doctype}** bo'yicha amaliy ko'rsatishni boshladim.`);
 					if (this._allowDependencyCreation) {

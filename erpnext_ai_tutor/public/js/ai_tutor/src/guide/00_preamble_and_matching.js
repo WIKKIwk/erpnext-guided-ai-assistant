@@ -239,6 +239,23 @@
 						tutorialRaw.stock_entry_type_preference
 					);
 					const allowDependencyCreation = tutorialRaw.allow_dependency_creation === true;
+					const fieldOverridesRaw =
+						tutorialRaw.field_overrides && typeof tutorialRaw.field_overrides === "object"
+							? tutorialRaw.field_overrides
+							: {};
+					const fieldOverrides = {};
+					for (const [rawField, rawCfg] of Object.entries(fieldOverridesRaw)) {
+						const fieldname = String(rawField || "").trim().toLowerCase();
+						if (fieldname !== "email") continue;
+						if (!rawCfg || typeof rawCfg !== "object") continue;
+						const overwrite = rawCfg.overwrite === true;
+						const value = String(rawCfg.value || "").trim().slice(0, 160);
+						if (!overwrite && !value) continue;
+						const cfg = {};
+						if (overwrite) cfg.overwrite = true;
+						if (value) cfg.value = value;
+						if (Object.keys(cfg).length) fieldOverrides[fieldname] = cfg;
+					}
 					if (mode === "create_record") {
 						const allowedStages = new Set(["open_and_fill_basic", "fill_more", "show_save_only"]);
 						const stage = allowedStages.has(stageRaw) ? stageRaw : "open_and_fill_basic";
@@ -252,6 +269,9 @@
 						}
 						if (allowDependencyCreation) {
 							tutorial.allow_dependency_creation = true;
+						}
+						if (Object.keys(fieldOverrides).length) {
+							tutorial.field_overrides = fieldOverrides;
 						}
 					} else if (mode === "manage_roles") {
 						const allowedStages = new Set(["open_roles_tab", "add_role_row", "select_role"]);

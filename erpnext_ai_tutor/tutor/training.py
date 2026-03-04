@@ -49,6 +49,7 @@ def maybe_handle_training_flow(
 	explicit_doctype = str(training_ctx.get("explicit_doctype") or "")
 	practical_tutorial_requested = bool(training_ctx.get("practical_tutorial_requested"))
 	requested_stock_type = str(training_ctx.get("requested_stock_type") or "")
+	field_overrides = training_ctx.get("field_overrides") if isinstance(training_ctx.get("field_overrides"), dict) else {}
 
 	resolve_training_target = partial(
 		_resolve_training_target_runtime,
@@ -111,6 +112,7 @@ def maybe_handle_training_flow(
 		create_requested=create_requested,
 		explicit_doctype=explicit_doctype,
 		pick_stock_entry_type=pick_stock_entry_type,
+		field_overrides=field_overrides,
 	)
 	if continue_flow_reply is not None:
 		return continue_flow_reply
@@ -121,6 +123,7 @@ def maybe_handle_training_flow(
 		create_requested=create_requested,
 		resolve_training_target=resolve_training_target,
 		pick_stock_entry_type=pick_stock_entry_type,
+		field_overrides=field_overrides,
 	)
 	if create_or_intent_reply is not None:
 		return create_or_intent_reply

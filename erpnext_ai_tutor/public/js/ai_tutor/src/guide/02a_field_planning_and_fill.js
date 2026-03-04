@@ -350,6 +350,43 @@
 					return `demo.${base}@example.com`;
 				}
 
+				getTutorialFieldOverrides() {
+					const raw = this._tutorialFieldOverrides;
+					if (!raw || typeof raw !== "object") return {};
+					return raw;
+				}
+
+				getTutorialFieldOverride(fieldname) {
+					const key = String(fieldname || "").trim().toLowerCase();
+					if (!key) return null;
+					const overrides = this.getTutorialFieldOverrides();
+					const raw = overrides?.[key];
+					if (!raw || typeof raw !== "object") return null;
+					const overwrite = raw.overwrite === true;
+					const value = String(raw.value || "").trim();
+					if (!overwrite && !value) return null;
+					return {
+						overwrite,
+						value,
+					};
+				}
+
+				makeAlternativeEmail(df, currentValue = "") {
+					const current = String(currentValue || "").trim().toLowerCase();
+					const rawBase = String(df?.fieldname || df?.label || "user")
+						.trim()
+						.toLowerCase()
+						.replace(/[^a-z0-9]+/g, ".")
+						.replace(/^\.+|\.+$/g, "");
+					const base = rawBase || "user";
+					const suffix = `${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 10)}`;
+					let candidate = `demo.${base}.${suffix}@example.com`;
+					if (candidate.toLowerCase() === current) {
+						candidate = `demo.${base}.${suffix}.new@example.com`;
+					}
+					return candidate;
+				}
+
 					buildMergedFieldPlans(doctype, stage, plannedRows = [], fallbackPlans = []) {
 						const merged = [];
 						const seen = new Set();
@@ -390,6 +427,23 @@
 								reason: "majburiy maydonni to'ldirish uchun",
 							},
 							"required",
+							{ force: true }
+						);
+					}
+					const tutorialOverrides = this.getTutorialFieldOverrides();
+					for (const [fieldname, cfg] of Object.entries(tutorialOverrides)) {
+						if (!cfg || typeof cfg !== "object") continue;
+						const normalized = String(fieldname || "").trim();
+						if (!normalized) continue;
+						if (cfg.overwrite !== true && !String(cfg.value || "").trim()) continue;
+						append(
+							{
+								fieldname: normalized,
+								label: this.getFieldLabel(normalized) || normalized,
+								value: String(cfg.value || "").trim(),
+								reason: "foydalanuvchi so'roviga ko'ra qiymatni yangilash uchun",
+							},
+							"override",
 							{ force: true }
 						);
 					}
@@ -698,14 +752,36 @@
 						const reason = String(plan?.reason || "demo maqsadida").trim();
 
 						const currentVal = this.readFieldValue(fieldname);
-						if (this.isFieldValueFilled(df, currentVal) && !this.isControlInvalid(fieldname)) {
+						const fieldOverride = this.getTutorialFieldOverride(fieldname);
+						const shouldOverwrite = Boolean(fieldOverride?.overwrite);
+						if (this.isFieldValueFilled(df, currentVal) && !this.isControlInvalid(fieldname) && !shouldOverwrite) {
 							this.emitProgress(`ℹ️ **${label}** allaqachon to'ldirilgan, qayta yozmadim.`);
 							continue;
 						}
 
-						const valueToType = await this.resolvePlanValue(df, plan?.value, {
+						const overrideValue = String(fieldOverride?.value || "").trim();
+						let rawValue = plan?.value;
+						if (shouldOverwrite) {
+							if (this.isEmailField(df)) {
+								rawValue = this.isValidEmailValue(overrideValue)
+									? overrideValue
+									: this.makeAlternativeEmail(df, currentVal);
+							} else if (overrideValue) {
+								rawValue = overrideValue;
+							}
+						}
+						let valueToType = await this.resolvePlanValue(df, rawValue, {
 							allowCreateLink: Boolean(this._allowDependencyCreation && df?.reqd),
 						});
+						if (shouldOverwrite && this.isEmailField(df)) {
+							const normalizedCurrent = String(currentVal || "").trim().toLowerCase();
+							const normalizedNext = String(valueToType || "").trim().toLowerCase();
+							if (!normalizedNext || normalizedNext === normalizedCurrent) {
+								valueToType = await this.resolvePlanValue(df, this.makeAlternativeEmail(df, currentVal), {
+									allowCreateLink: Boolean(this._allowDependencyCreation && df?.reqd),
+								});
+							}
+						}
 						if (!this.isFieldValueFilled(df, valueToType)) {
 							const linkDoctype = String(df?.options || "").trim();
 							if (String(df?.fieldtype || "").trim() === "Link" && Boolean(df?.reqd) && linkDoctype) {

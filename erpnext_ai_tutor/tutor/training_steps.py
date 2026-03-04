@@ -21,6 +21,7 @@ def _build_start_step_response(
 	menu_path: List[str],
 	stock_entry_type_preference: str = "",
 	allow_dependency_creation: bool = False,
+	field_overrides: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	reply = _start_tutorial_reply(lang, doctype)
 	guide = _build_guide_payload(
@@ -30,6 +31,7 @@ def _build_start_step_response(
 		stage="open_and_fill_basic",
 		stock_entry_type_preference=stock_entry_type_preference,
 		allow_dependency_creation=allow_dependency_creation,
+		field_overrides=field_overrides if isinstance(field_overrides, dict) else None,
 	)
 	return _build_training_reply(
 		reply=reply,
@@ -52,6 +54,7 @@ def _build_continue_step_response(
 	menu_path: List[str],
 	stock_entry_type_preference: str = "",
 	allow_dependency_creation: bool = False,
+	field_overrides: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	reply = _continue_tutorial_reply(lang, doctype, stage)
 	guide = _build_guide_payload(
@@ -61,6 +64,7 @@ def _build_continue_step_response(
 		stage=stage,
 		stock_entry_type_preference=stock_entry_type_preference,
 		allow_dependency_creation=allow_dependency_creation,
+		field_overrides=field_overrides if isinstance(field_overrides, dict) else None,
 	)
 	return _build_training_reply(
 		reply=reply,

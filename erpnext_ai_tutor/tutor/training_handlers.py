@@ -99,6 +99,7 @@ def _handle_active_continue(
 	create_requested: bool,
 	explicit_doctype: str,
 	pick_stock_entry_type: Callable[[str], str],
+	field_overrides: Dict[str, Any] | None = None,
 ) -> Dict[str, Any] | None:
 	if not (state_action == "create_record" and state_doctype and (continue_requested or show_save_requested)):
 		return None
@@ -130,6 +131,7 @@ def _handle_active_continue(
 		menu_path=menu_path,
 		stock_entry_type_preference=pick_stock_entry_type(doctype),
 		allow_dependency_creation=bool(dependency_create_requested and stage != "show_save_only"),
+		field_overrides=field_overrides if isinstance(field_overrides, dict) else None,
 	)
 
 
@@ -140,6 +142,7 @@ def _handle_create_or_intent(
 	create_requested: bool,
 	resolve_training_target: Callable[..., Dict[str, Any]],
 	pick_stock_entry_type: Callable[[str], str],
+	field_overrides: Dict[str, Any] | None = None,
 ) -> Dict[str, Any] | None:
 	if not create_requested:
 		return None
@@ -155,6 +158,7 @@ def _handle_create_or_intent(
 		route=str(target.get("route") or ""),
 		menu_path=target.get("menu_path") or [],
 		stock_entry_type_preference=pick_stock_entry_type(doctype),
+		field_overrides=field_overrides if isinstance(field_overrides, dict) else None,
 	)
 
 
