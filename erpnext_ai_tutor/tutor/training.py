@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, Dict
 
 from erpnext_ai_tutor.tutor.training_intent import (
@@ -16,13 +17,15 @@ from erpnext_ai_tutor.tutor.training_handlers import (
 	_handle_pending_target,
 )
 from erpnext_ai_tutor.tutor.training_patterns import (
-	ALLOWED_STOCK_ENTRY_TYPES,
 	CONTINUE_ACTION_RE,
 	CREATE_ACTION_RE,
 	SHOW_SAVE_RE,
 	normalize_apostrophes as _normalize_apostrophes,
 )
-from erpnext_ai_tutor.tutor.training_resolution import _resolve_doctype_target
+from erpnext_ai_tutor.tutor.training_runtime import (
+	_pick_stock_entry_type,
+	_resolve_training_target as _resolve_training_target_runtime,
+)
 from erpnext_ai_tutor.tutor.training_replies import (
 	_action_clarify_reply,
 )
@@ -80,64 +83,33 @@ def maybe_handle_training_flow(
 	if state_action == "create_record" and state_doctype and practical_tutorial_requested and not explicit_doctype and not show_save_requested:
 		continue_requested = True
 
-	def _resolve_training_target(*, allow_context_fallback: bool, fallback_doctype: str = "") -> Dict[str, Any]:
-		# User's direct doctype mention always wins over inferred intent.
-		if explicit_target:
-			return explicit_target
-		context_target = _target_from_doctype(context_doctype) if context_doctype else {}
-		intent_target: Dict[str, Any] = {}
-		context_vs_state_mismatch = (
-			bool(context_target)
-			and bool(state_action == "create_record")
-			and bool(state_doctype)
-			and str(context_doctype or "").strip().lower() != str(state_doctype or "").strip().lower()
-		)
-		# Active tutorial holatida (state bor) va user yangi doctype'ni aniq aytmagan bo'lsa,
-		# joriy sahifa doctype'i stale state/intentiondan ustun turadi.
-		if context_vs_state_mismatch and not explicit_doctype:
-			return context_target
-		if intent_doctype:
-			intent_target = _resolve_doctype_target(intent_doctype, ctx, allow_context_fallback=False)
-			if intent_target:
-				intent_dt = str(intent_target.get("doctype") or "").strip().lower()
-				context_dt = str(context_doctype or "").strip().lower()
-				# Generic "davom et / qolganini to'ldir" so'rovlarda joriy form doctype
-				# oldingi yoki xato intentdan ustun turishi kerak.
-				if (
-					context_target
-					and not explicit_doctype
-					and intent_dt
-					and context_dt
-					and intent_dt != context_dt
-					and (continue_requested or show_save_requested or practical_tutorial_requested)
-				):
-					return context_target
-				return intent_target
-		if context_target and not explicit_doctype and (continue_requested or show_save_requested):
-			return context_target
-		return _resolve_doctype_target(
-			text_rules,
-			ctx,
-			fallback_doctype=fallback_doctype,
-			allow_context_fallback=allow_context_fallback,
-		)
-
-	def _pick_stock_entry_type(doctype_name: str) -> str:
-		if str(doctype_name or "").strip().lower() != "stock entry":
-			return ""
-		if requested_stock_type:
-			return requested_stock_type
-		if state_stock_type in ALLOWED_STOCK_ENTRY_TYPES:
-			return state_stock_type
-		return ""
+	resolve_training_target = partial(
+		_resolve_training_target_runtime,
+		explicit_target=explicit_target,
+		context_doctype=context_doctype,
+		state_action=state_action,
+		state_doctype=state_doctype,
+		explicit_doctype=explicit_doctype,
+		intent_doctype=intent_doctype,
+		continue_requested=continue_requested,
+		show_save_requested=show_save_requested,
+		practical_tutorial_requested=practical_tutorial_requested,
+		text_rules=text_rules,
+		ctx=ctx,
+	)
+	pick_stock_entry_type = partial(
+		_pick_stock_entry_type,
+		requested_stock_type=requested_stock_type,
+		state_stock_type=state_stock_type,
+	)
 
 	if pending == "action":
 		return _handle_pending_action(
 			lang=lang,
 			state_doctype=state_doctype,
 			create_requested=create_requested,
-			resolve_training_target=_resolve_training_target,
-			pick_stock_entry_type=_pick_stock_entry_type,
+			resolve_training_target=resolve_training_target,
+			pick_stock_entry_type=pick_stock_entry_type,
 		)
 
 	if pending == "target":
@@ -145,8 +117,8 @@ def maybe_handle_training_flow(
 			lang=lang,
 			state_doctype=state_doctype,
 			create_requested=create_requested,
-			resolve_training_target=_resolve_training_target,
-			pick_stock_entry_type=_pick_stock_entry_type,
+			resolve_training_target=resolve_training_target,
+			pick_stock_entry_type=pick_stock_entry_type,
 		)
 
 	continue_flow_reply = _handle_active_continue(
@@ -159,7 +131,7 @@ def maybe_handle_training_flow(
 		show_save_requested=show_save_requested,
 		create_requested=create_requested,
 		explicit_doctype=explicit_doctype,
-		pick_stock_entry_type=_pick_stock_entry_type,
+		pick_stock_entry_type=pick_stock_entry_type,
 	)
 	if continue_flow_reply is not None:
 		return continue_flow_reply
@@ -169,8 +141,8 @@ def maybe_handle_training_flow(
 		state_doctype=state_doctype,
 		create_requested=create_requested,
 		intent_doctype=intent_doctype,
-		resolve_training_target=_resolve_training_target,
-		pick_stock_entry_type=_pick_stock_entry_type,
+		resolve_training_target=resolve_training_target,
+		pick_stock_entry_type=pick_stock_entry_type,
 	)
 	if create_or_intent_reply is not None:
 		return create_or_intent_reply
