@@ -1728,25 +1728,40 @@
 		}
 
 		closeNoRolesSpecifiedDialog() {
-			const selectors = [
-				".msgprint-dialog.modal.show .modal-header .btn-close",
-				".msgprint-dialog.show .modal-header .btn-close",
-				".msgprint-dialog.modal.show .modal-header .btn-modal-close",
-				".msgprint-dialog.show .modal-header .btn-modal-close",
-				".msgprint-dialog.modal.show [data-dismiss='modal']",
-				".msgprint-dialog.show [data-dismiss='modal']",
-				".msgprint-dialog.modal.show .modal-header .close",
-				".msgprint-dialog.show .modal-header .close",
+			const closeSelectors = [
+				".modal-header .btn-modal-close",
+				".modal-header .btn-close",
+				".modal-header [data-dismiss='modal']",
+				".modal-header .close",
+				"button[aria-label='Close']",
 			];
-			for (const sel of selectors) {
-				const btn = document.querySelector(sel);
-				if (btn && typeof btn.click === "function") {
-					btn.click();
-					return true;
+			const dialogs = Array.from(document.querySelectorAll(".msgprint-dialog, .modal.msgprint-dialog, .modal.show"))
+				.filter((el) => {
+					const text = stripHtml(el?.textContent || "").toLowerCase();
+					return text.includes("no roles specified") || text.includes("has no roles") || text.includes("no roles enabled");
+				})
+				.reverse();
+			for (const dialog of dialogs) {
+				for (const sel of closeSelectors) {
+					const btn = dialog.querySelector(sel);
+					if (btn && typeof btn.click === "function") {
+						btn.click();
+						return true;
+					}
 				}
 			}
 			try {
 				const dialog = frappe?.msg_dialog;
+				const wrapper = dialog?.$wrapper?.[0] || dialog?.wrapper || null;
+				if (wrapper) {
+					for (const sel of closeSelectors) {
+						const btn = wrapper.querySelector(sel);
+						if (btn && typeof btn.click === "function") {
+							btn.click();
+							return true;
+						}
+					}
+				}
 				if (dialog && typeof dialog.hide === "function") {
 					dialog.hide();
 					return true;
@@ -1759,11 +1774,28 @@
 
 		async closeNoRolesSpecifiedDialogWithRetry() {
 			if (this.closeNoRolesSpecifiedDialog()) return true;
-			for (let i = 0; i < 6; i += 1) {
-				await new Promise((resolve) => setTimeout(resolve, 120));
+			for (let i = 0; i < 12; i += 1) {
+				await new Promise((resolve) => setTimeout(resolve, 100));
 				if (this.closeNoRolesSpecifiedDialog()) return true;
 			}
 			return false;
+		}
+
+		async navigateToUserListAfterNoRoles() {
+			const now = Date.now();
+			const lastAt = Number(this._lastNoRolesRouteAt || 0);
+			if (lastAt && now - lastAt < 6000) return;
+			this._lastNoRolesRouteAt = now;
+			await new Promise((resolve) => setTimeout(resolve, 160));
+			try {
+				if (frappe?.set_route) {
+					frappe.set_route("List", "User");
+					return;
+				}
+			} catch {
+				// ignore and fallback
+			}
+			this.navigateToRoute("/app/user");
 		}
 
 		async handleNoRolesSpecifiedEvent(ev) {
@@ -1780,6 +1812,7 @@
 					{ route_key: this.routeKey || this.getRouteKey() }
 				);
 			}
+			await this.navigateToUserListAfterNoRoles();
 			this.open();
 			return true;
 		}
