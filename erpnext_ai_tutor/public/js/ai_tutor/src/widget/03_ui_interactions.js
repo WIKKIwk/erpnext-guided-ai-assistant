@@ -216,7 +216,54 @@
 			return hasNoRolesTitle || hasNoRolesText;
 		}
 
-		closeNoRolesSpecifiedDialog() {
+		ensureGuideRunnerForCursorAction() {
+			if (this.guideRunner) return this.guideRunner;
+			const runnerCtor =
+				(typeof GuideRunner === "function" && GuideRunner) ||
+				(typeof window !== "undefined" && typeof window.GuideRunner === "function" && window.GuideRunner) ||
+				null;
+			if (!runnerCtor) return null;
+			try {
+				this.guideRunner = new runnerCtor({ widget: this });
+			} catch {
+				this.guideRunner = null;
+			}
+			return this.guideRunner;
+		}
+
+		async clickElementWithGuideCursor(el) {
+			if (!el || !this.isGuidedCursorEnabled()) return false;
+			if (this.guidedRunActive) return false;
+			const runner = this.ensureGuideRunnerForCursorAction();
+			if (!runner) return false;
+			if (runner.running) return false;
+			if (typeof runner.createLayer !== "function" || typeof runner.stop !== "function" || typeof runner.focusElement !== "function") {
+				return false;
+			}
+			try {
+				runner.stop();
+				runner.running = true;
+				runner.createLayer();
+				const clicked = await runner.focusElement(el, "", {
+					click: true,
+					skip_scroll: true,
+					duration_ms: 300,
+					pre_click_pause_ms: 120,
+				});
+				await new Promise((resolve) => setTimeout(resolve, 80));
+				return Boolean(clicked);
+			} catch {
+				return false;
+			} finally {
+				try {
+					runner.stop();
+				} catch {
+					// ignore
+				}
+			}
+		}
+
+		async closeNoRolesSpecifiedDialog() {
 			const closeSelectors = [
 				".modal-header .btn-modal-close",
 				".modal-header .btn-close",
@@ -234,8 +281,10 @@
 				for (const sel of closeSelectors) {
 					const btn = dialog.querySelector(sel);
 					if (btn && typeof btn.click === "function") {
-						btn.click();
-						return true;
+						const byCursor = await this.clickElementWithGuideCursor(btn);
+						if (!byCursor) btn.click();
+						await new Promise((resolve) => setTimeout(resolve, 80));
+						if (!this.isNoRolesDialogVisible()) return true;
 					}
 				}
 			}
@@ -257,7 +306,10 @@
 					for (const sel of closeSelectors) {
 						const btn = wrapper.querySelector(sel);
 						if (btn && typeof btn.click === "function" && isVisible) {
-							btn.click();
+							const byCursor = await this.clickElementWithGuideCursor(btn);
+							if (!byCursor) btn.click();
+							await new Promise((resolve) => setTimeout(resolve, 80));
+							if (!this.isNoRolesDialogVisible()) return true;
 						}
 					}
 				}
@@ -265,6 +317,8 @@
 					const closeBtn = dialog.get_close_btn();
 					if (closeBtn && typeof closeBtn.trigger === "function") {
 						closeBtn.trigger("click");
+						await new Promise((resolve) => setTimeout(resolve, 60));
+						if (!this.isNoRolesDialogVisible()) return true;
 					}
 				}
 				if (isVisible && typeof window.jQuery === "function" && wrapper) {
@@ -306,11 +360,11 @@
 		async closeNoRolesSpecifiedDialogWithRetry() {
 			for (let i = 0; i < 16; i += 1) {
 				if (!this.isNoRolesDialogVisible()) return true;
-				this.closeNoRolesSpecifiedDialog();
+				await this.closeNoRolesSpecifiedDialog();
 				await new Promise((resolve) => setTimeout(resolve, 90));
 				if (!this.isNoRolesDialogVisible()) return true;
 			}
-			this.closeNoRolesSpecifiedDialog();
+			await this.closeNoRolesSpecifiedDialog();
 			return !this.isNoRolesDialogVisible();
 		}
 
