@@ -1115,10 +1115,10 @@
 			return null;
 		}
 
-			findFieldInput(fieldname, opts = {}) {
-				const key = String(fieldname || "").trim();
-				if (!key) return null;
-				const allowHidden = Boolean(opts?.allowHidden);
+				findFieldInput(fieldname, opts = {}) {
+					const key = String(fieldname || "").trim();
+					if (!key) return null;
+					const allowHidden = Boolean(opts?.allowHidden);
 				const selectors = [
 					`.frappe-control[data-fieldname='${key}'] input:not([type='hidden'])`,
 					`.frappe-control[data-fieldname='${key}'] textarea`,
@@ -1337,6 +1337,43 @@
 					return null;
 				}
 
+				async ensureFieldTabVisible(fieldname, label = "") {
+					const key = String(fieldname || "").trim();
+					if (!key) return false;
+					const control = document.querySelector(`.frappe-control[data-fieldname='${key}']`);
+					if (!control) return false;
+
+					const pane = control.closest(".tab-pane");
+					if (!pane) return false;
+					const isActivePane = pane.classList.contains("active") || pane.classList.contains("show");
+					if (isActivePane) return true;
+
+					const paneId = String(pane.getAttribute("id") || "").trim();
+					if (!paneId) return false;
+					const tabSelectors = [
+						`.form-tabs a[href='#${paneId}']`,
+						`.form-tabs button[data-bs-target='#${paneId}']`,
+						`.form-tabs [data-target='#${paneId}']`,
+						`.form-tabs a[data-target='#${paneId}']`,
+					];
+					for (const sel of tabSelectors) {
+						const tabBtn = document.querySelector(sel);
+						if (!tabBtn || !isVisible(tabBtn)) continue;
+						await this.focusElement(
+							tabBtn,
+							`**${label || key}** maydoni joylashgan tabga o'tamiz.`,
+							{
+								click: true,
+								duration_ms: 220,
+								pre_click_pause_ms: 80,
+							}
+						);
+						await this.sleep(140);
+						return true;
+					}
+					return false;
+				}
+
 				isStructFieldType(fieldtype) {
 					const ft = String(fieldtype || "").trim();
 					return [
@@ -1465,9 +1502,9 @@
 					return `demo.${base}@example.com`;
 				}
 
-				buildMergedFieldPlans(doctype, stage, plannedRows = [], fallbackPlans = []) {
-					const merged = [];
-					const seen = new Set();
+					buildMergedFieldPlans(doctype, stage, plannedRows = [], fallbackPlans = []) {
+						const merged = [];
+						const seen = new Set();
 					const append = (row, source, opts = {}) => {
 						if (!row || typeof row !== "object") return;
 						const fieldname = String(row.fieldname || "").trim();
@@ -1495,7 +1532,7 @@
 					};
 
 					const requiredMissing = this.collectMissingRequiredFields(doctype);
-					for (const req of requiredMissing) {
+						for (const req of requiredMissing) {
 						append(
 							{
 								fieldname: req.fieldname,
@@ -1507,11 +1544,15 @@
 							{ force: true }
 						);
 					}
-					for (const row of Array.isArray(plannedRows) ? plannedRows : []) append(row, "ai");
-					for (const row of Array.isArray(fallbackPlans) ? fallbackPlans : []) append(row, "fallback");
+						for (const row of Array.isArray(plannedRows) ? plannedRows : []) append(row, "ai");
+						for (const row of Array.isArray(fallbackPlans) ? fallbackPlans : []) append(row, "fallback");
 
-					return stage === "fill_more" ? merged.slice(0, 8) : merged.slice(0, 6);
-				}
+						return merged.slice(0, this.getTutorialPlanLimit(stage));
+					}
+
+					getTutorialPlanLimit(stage = "open_and_fill_basic") {
+						return String(stage || "").trim().toLowerCase() === "fill_more" ? 14 : 10;
+					}
 
 				async fetchLinkDemoValue(linkDoctype, hint = "") {
 					const doctype = String(linkDoctype || "").trim();
@@ -1701,6 +1742,7 @@
 					if (!frm || String(frm.doctype || "").trim().toLowerCase() !== lower) return [];
 					const fields = Array.isArray(frm.meta?.fields) ? frm.meta.fields : [];
 					const plans = [];
+					const limit = this.getTutorialPlanLimit(stage);
 				for (const df of fields) {
 						if (!df || !df.fieldname) continue;
 						if (df.hidden || df.read_only) continue;
@@ -1725,9 +1767,12 @@
 							value: sample,
 							reason: "demo ko'rsatish uchun",
 						});
-						if (plans.length >= 4) break;
+						if (plans.length >= limit + 1) break;
 				}
-				return stage === "fill_more" ? plans.slice(1) : plans;
+				if (stage === "fill_more") {
+					return plans.slice(1, limit + 1);
+				}
+				return plans.slice(0, limit);
 			}
 
 				async fillFormFields(doctype, stage = "open_and_fill_basic", plannedRows = []) {
@@ -1746,11 +1791,6 @@
 						const label = String(plan?.label || this.getFieldLabel(fieldname) || fieldname).trim();
 						if (this.isTutorialNoiseField(doctype, df, fieldname, label) && !Boolean(df?.reqd)) continue;
 						const reason = String(plan?.reason || "demo maqsadida").trim();
-						const input = this.findFieldInput(fieldname, { allowHidden: false });
-						if (!input) {
-							this.emitProgress(`⚠️ **${label}** maydoni topilmadi, keyingi qadamga o'tdim.`);
-							continue;
-						}
 
 						const currentVal = this.readFieldValue(fieldname);
 						if (this.isFieldValueFilled(df, currentVal) && !this.isControlInvalid(fieldname)) {
@@ -1768,6 +1808,22 @@
 								);
 							} else {
 								this.emitProgress(`⚠️ **${label}** uchun demo qiymat aniqlanmadi, keyingi qadamga o'tdim.`);
+							}
+							continue;
+						}
+
+						await this.ensureFieldTabVisible(fieldname, label);
+						const input = this.findFieldInput(fieldname, { allowHidden: false });
+						if (!input) {
+							const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
+							if (modelOnlyOk) {
+								filled += 1;
+								if (!filledLabels.includes(label)) filledLabels.push(label);
+								this.emitProgress(
+									`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi (model fallback), sababi: ${reason}.`
+								);
+							} else {
+								this.emitProgress(`⚠️ **${label}** maydoni UIda topilmadi va model orqali ham to'ldirib bo'lmadi.`);
 							}
 							continue;
 						}
@@ -1790,7 +1846,16 @@
 								`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi, sababi: ${reason}.`
 							);
 						} else {
-							this.emitProgress(`⚠️ **${label}** qiymati form tomonidan qabul qilinmadi, qayta tekshirish kerak.`);
+							const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
+							if (fallbackOk) {
+								filled += 1;
+								if (!filledLabels.includes(label)) filledLabels.push(label);
+								this.emitProgress(
+									`✅ **${label}** maydoni model fallback orqali \`${String(valueToType || "").trim()}\` qiymatiga to'ldirildi, sababi: ${reason}.`
+								);
+							} else {
+								this.emitProgress(`⚠️ **${label}** qiymati form tomonidan qabul qilinmadi, qayta tekshirish kerak.`);
+							}
 						}
 					}
 
@@ -1810,11 +1875,6 @@
 								continue;
 							}
 							const label = String(req?.label || this.getFieldLabel(fieldname) || fieldname).trim();
-							const input = this.findFieldInput(fieldname, { allowHidden: false });
-							if (!input) {
-								failedRequired.add(fieldname);
-								continue;
-							}
 							const currentVal = this.readFieldValue(fieldname);
 							if (this.isFieldValueFilled(df, currentVal) && !this.isControlInvalid(fieldname)) continue;
 
@@ -1825,6 +1885,21 @@
 									blockedLinkHints.push(`**${label}** (Link: ${linkDoctype})`);
 								}
 								failedRequired.add(fieldname);
+								continue;
+							}
+
+							await this.ensureFieldTabVisible(fieldname, label);
+							const input = this.findFieldInput(fieldname, { allowHidden: false });
+							if (!input) {
+								const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
+								if (modelOnlyOk) {
+									filled += 1;
+									roundProgress = true;
+									if (!filledLabels.includes(label)) filledLabels.push(label);
+									this.emitProgress(`✅ Majburiy **${label}** maydoni model fallback orqali to'ldirildi.`);
+								} else {
+									failedRequired.add(fieldname);
+								}
 								continue;
 							}
 
@@ -1847,7 +1922,15 @@
 								if (!filledLabels.includes(label)) filledLabels.push(label);
 								this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
 							} else {
-								failedRequired.add(fieldname);
+								const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
+								if (fallbackOk) {
+									filled += 1;
+									roundProgress = true;
+									if (!filledLabels.includes(label)) filledLabels.push(label);
+									this.emitProgress(`✅ Majburiy **${label}** maydoni model fallback orqali to'ldirildi.`);
+								} else {
+									failedRequired.add(fieldname);
+								}
 							}
 						}
 						if (!roundProgress) break;
@@ -1888,10 +1971,11 @@
 					}
 				}
 
-				async setDocFieldValue(fieldname, value, label) {
+				async setDocFieldValue(fieldname, value, label, opts = {}) {
 					const frm = window.cur_frm;
 					if (!frm || !fieldname) return false;
 					const stringValue = String(value ?? "");
+					const silent = Boolean(opts?.silent);
 					try {
 						const input = this.findFieldInput(fieldname, { allowHidden: false });
 						if (input) {
@@ -1912,18 +1996,18 @@
 						const df = this.getFieldMeta(fieldname);
 						const after = this.readFieldValue(fieldname);
 						let ok = this.isFieldValueFilled(df, after) && !this.isControlInvalid(fieldname);
-						if (!ok) {
-							await frm.set_value(fieldname, value);
-							await this.sleep(140);
-							const afterFallback = this.readFieldValue(fieldname);
-							ok = this.isFieldValueFilled(df, afterFallback) && !this.isControlInvalid(fieldname);
+							if (!ok) {
+								await frm.set_value(fieldname, value);
+								await this.sleep(140);
+								const afterFallback = this.readFieldValue(fieldname);
+								ok = this.isFieldValueFilled(df, afterFallback) && !this.isControlInvalid(fieldname);
+							}
+							if (ok && !silent) this.emitProgress(`✅ **${label || fieldname}** maydoni \`${String(value || "")}\` bilan to'ldirildi.`);
+							return ok;
+						} catch {
+							return false;
 						}
-						if (ok) this.emitProgress(`✅ **${label || fieldname}** maydoni \`${String(value || "")}\` bilan to'ldirildi.`);
-						return ok;
-					} catch {
-						return false;
 					}
-				}
 
 				async getItemsGridInput(row, fieldname) {
 					const frm = window.cur_frm;
@@ -2208,14 +2292,37 @@
 				} else {
 					this.emitProgress("⚠️ AI reja qaytarmadi, zaxira reja bilan davom etaman.");
 				}
-					const fillResult = await this.fillFormFields(
-						doctype,
-						stage === "fill_more" ? "fill_more" : "open_and_fill_basic",
-						planResult.plan
-					);
-					let filled = Number(fillResult?.filled || 0);
-					const filledLabels = Array.isArray(fillResult?.filledLabels) ? [...fillResult.filledLabels] : [];
-					let blockedLinkHints = Array.isArray(fillResult?.blockedLinkHints) ? [...fillResult.blockedLinkHints] : [];
+					const stageToRun = stage === "fill_more" ? "fill_more" : "open_and_fill_basic";
+					let filled = 0;
+					const filledLabels = [];
+					let blockedLinkHints = [];
+					const mergeFillStats = (result) => {
+						const inc = Number(result?.filled || 0);
+						if (inc > 0) filled += inc;
+						for (const label of Array.isArray(result?.filledLabels) ? result.filledLabels : []) {
+							if (label && !filledLabels.includes(label)) filledLabels.push(label);
+						}
+						const blocked = Array.isArray(result?.blockedLinkHints) ? result.blockedLinkHints : [];
+						blockedLinkHints = [...new Set([...blockedLinkHints, ...blocked])];
+					};
+
+					const fillResult = await this.fillFormFields(doctype, stageToRun, planResult.plan);
+					mergeFillStats(fillResult);
+
+					// Always do one deeper pass so tutor fills more than a single field when possible.
+					if (stageToRun !== "fill_more" && this.running) {
+						this.emitProgress("🔍 Qo'shimcha batafsil pass: yana ko'proq mos maydonlarni to'ldirishga harakat qilaman.");
+						const deepPlanResult = await this.requestAIFieldPlan(doctype, "fill_more");
+						if (Array.isArray(deepPlanResult.plan) && deepPlanResult.plan.length) {
+							this.emitProgress(
+								`🧭 Batafsil reja: ${deepPlanResult.plan.length} ta qo'shimcha qadam (${String(
+									deepPlanResult.source || "ai"
+								)}).`
+							);
+						}
+						const deepFillResult = await this.fillFormFields(doctype, "fill_more", deepPlanResult.plan);
+						mergeFillStats(deepFillResult);
+					}
 
 					if (String(doctype || "").trim().toLowerCase() === "stock entry") {
 						this.emitProgress("🧠 Stock Entry uchun qator maydonlarini ham aqlli to'ldiraman (Item, Qty, Warehouse).");

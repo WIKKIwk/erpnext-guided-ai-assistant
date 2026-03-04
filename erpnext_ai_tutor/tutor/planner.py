@@ -8,6 +8,8 @@ from erpnext_ai_tutor.tutor.llm import call_llm
 
 _FIELDNAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 _DEFAULT_STOCK_ENTRY_ORDER = ["Material Receipt", "Material Transfer", "Material Issue"]
+_BASIC_PLAN_LIMIT = 10
+_FILL_MORE_PLAN_LIMIT = 14
 
 
 def _as_text(value: Any) -> str:
@@ -138,6 +140,13 @@ def _stock_entry_preferred_order(stock_entry_type_preference: str = "") -> List[
 	return [pref] + [x for x in _DEFAULT_STOCK_ENTRY_ORDER if x != pref]
 
 
+def _plan_limit_for_stage(stage: str) -> int:
+	stage_norm = _as_text(stage).lower() or "open_and_fill_basic"
+	if stage_norm == "fill_more":
+		return _FILL_MORE_PLAN_LIMIT
+	return _BASIC_PLAN_LIMIT
+
+
 def _fallback_plan(
 	doctype: str,
 	stage: str,
@@ -148,6 +157,7 @@ def _fallback_plan(
 	field_map = {str(f.get("fieldname") or "").strip(): f for f in fields}
 	lower_dt = _as_text(doctype).lower()
 	stage = _as_text(stage).lower() or "open_and_fill_basic"
+	max_rows = _plan_limit_for_stage(stage)
 	plan: List[Dict[str, str]] = []
 
 	def add(fieldname: str, value: str, reason: str) -> None:
@@ -169,12 +179,12 @@ def _fallback_plan(
 			add("item_group", "All Item Groups", "toifaga biriktirish uchun")
 			add("stock_uom", "Nos", "ombor birligini belgilash uchun")
 		if plan:
-			return plan[:6]
+			return plan[:max_rows]
 	if lower_dt == "stock entry":
 		stock_pref = _stock_entry_preferred_order(stock_entry_type_preference)[0]
 		add("stock_entry_type", stock_pref, "ombor amaliyoti turi tanlanmasa qolgan qadamlar barqaror ishlamaydi")
 		if plan:
-			return plan[:6]
+			return plan[:max_rows]
 
 	ordered_fields = sorted(
 		fields,
@@ -185,7 +195,7 @@ def _fallback_plan(
 	)
 
 	for f in ordered_fields:
-		if len(plan) >= 4:
+		if len(plan) >= max_rows:
 			break
 		if _to_bool(f.get("read_only")) or _to_bool(f.get("hidden")):
 			continue
@@ -210,7 +220,7 @@ def _fallback_plan(
 		else:
 			value = f"Demo {label}"
 		plan.append({"fieldname": fieldname, "value": value, "reason": "demo o'rgatish uchun"})
-	return plan[:6]
+	return plan[:max_rows]
 
 
 def _extract_json_payload(text: str) -> Any:
@@ -242,6 +252,7 @@ def _normalize_plan(
 	raw_plan: Any,
 	fields: List[Dict[str, Any]],
 	doctype: str = "",
+	stage: str = "",
 	*,
 	stock_entry_type_preference: str = "",
 ) -> List[Dict[str, str]]:
@@ -256,7 +267,8 @@ def _normalize_plan(
 	field_map = {str(f.get("fieldname") or "").strip(): f for f in fields}
 	out: List[Dict[str, str]] = []
 	seen = set()
-	for row in raw_plan[:12]:
+	max_rows = _plan_limit_for_stage(stage)
+	for row in raw_plan[: max(12, max_rows * 2)]:
 		if not isinstance(row, dict):
 			continue
 		fieldname = _as_text(row.get("fieldname"))
@@ -283,11 +295,11 @@ def _normalize_plan(
 				preferred = _stock_entry_preferred_order(stock_entry_type_preference) if fieldname == "stock_entry_type" else []
 				fallback_opt = _pick_select_option(options, preferred=preferred)
 				value = fallback_opt or value or "Demo"
-		if not value:
-			value = "Demo"
-		out.append({"fieldname": fieldname, "value": value, "reason": reason})
-		seen.add(fieldname)
-	return out[:6]
+			if not value:
+				value = "Demo"
+			out.append({"fieldname": fieldname, "value": value, "reason": reason})
+			seen.add(fieldname)
+	return out[:max_rows]
 
 
 def _plan_with_llm(
@@ -297,6 +309,8 @@ def _plan_with_llm(
 	*,
 	stock_entry_type_preference: str = "",
 ) -> List[Dict[str, str]]:
+	stage_norm = _as_text(stage).lower() or "open_and_fill_basic"
+	max_rows = _plan_limit_for_stage(stage_norm)
 	compact_fields = []
 	for f in fields[:80]:
 		compact_fields.append(
@@ -317,15 +331,15 @@ def _plan_with_llm(
 		"Rules:\n"
 		"- Use only provided fieldname values.\n"
 		"- Never include save/submit/delete actions.\n"
-		"- Keep reasons short and practical in Uzbek.\n"
-		"- Prefer required fields first.\n"
-		"- For Item (open_and_fill_basic), strongly prefer item_code, item_name, item_group, stock_uom.\n"
-		"- For Stock Entry stock_entry_type, prioritize user's requested type when provided.\n"
-		"- Max 6 rows."
-	)
+			"- Keep reasons short and practical in Uzbek.\n"
+			"- Prefer required fields first.\n"
+			"- For Item (open_and_fill_basic), strongly prefer item_code, item_name, item_group, stock_uom.\n"
+			"- For Stock Entry stock_entry_type, prioritize user's requested type when provided.\n"
+			f"- Max {max_rows} rows."
+		)
 	user_payload = {
 		"doctype": _as_text(doctype),
-		"stage": _as_text(stage) or "open_and_fill_basic",
+		"stage": stage_norm,
 		"stock_entry_type_preference": _normalize_stock_entry_type_preference(stock_entry_type_preference),
 		"fields": compact_fields,
 	}
@@ -341,6 +355,7 @@ def _plan_with_llm(
 		parsed,
 		fields,
 		doctype=doctype,
+		stage=stage_norm,
 		stock_entry_type_preference=stock_entry_type_preference,
 	)
 
