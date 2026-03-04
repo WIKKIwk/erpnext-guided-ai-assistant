@@ -272,13 +272,6 @@
 							this.append("assistant", String(text), { route_key: routeKey });
 						},
 					});
-					if (runResult?.already_there) {
-						this.append(
-							"assistant",
-						String(runResult?.message || "Siz allaqachon shu yerdasiz."),
-						{ route_key: routeKey }
-					);
-				}
 
 				let reachedTarget = Boolean(runResult?.ok && runResult?.reached_target);
 				if (!reachedTarget && guide?.route && this.isRouteActive(guide.route)) {

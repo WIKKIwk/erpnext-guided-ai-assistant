@@ -63,6 +63,15 @@ AI_TARGET_ALIASES = {
 }
 ALLOWED_INTENT_ACTIONS = {"create_record", "continue", "show_save", "manage_roles", "other"}
 
+MANAGE_ROLES_RE = re.compile(
+	r"(?:"
+	r"\b(?:role|roles|permission|permissions)\b|"
+	r"\b(?:rol|rollar|ruxsat|ruxsatlar)\b|"
+	r"\b(?:роль|роли|права|разрешения)\b"
+	r")",
+	re.IGNORECASE,
+)
+
 
 def normalize_apostrophes(value: str) -> str:
 	"""Normalize common Uzbek apostrophe variants for regex-based intent rules."""

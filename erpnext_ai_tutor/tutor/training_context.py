@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from erpnext_ai_tutor.tutor.training_intent import _infer_training_intent_with_ai
 from erpnext_ai_tutor.tutor.training_patterns import (
+	MANAGE_ROLES_RE,
 	normalize_apostrophes as _normalize_apostrophes,
 )
 from erpnext_ai_tutor.tutor.training_state import _extract_state
@@ -34,6 +35,16 @@ def _build_training_context(user_message: str, ctx: Dict[str, Any]) -> Dict[str,
 	show_save_requested = intent_action == "show_save"
 	manage_roles_requested = intent_action == "manage_roles"
 	practical_tutorial_requested = intent_action in {"create_record", "continue"}
+	manage_roles_hint = bool(MANAGE_ROLES_RE.search(text_rules))
+	if manage_roles_hint:
+		# Guardrail: explicit role/permission requests must switch away from create-flow continuation.
+		manage_roles_requested = True
+		create_requested = False
+		continue_requested = False
+		show_save_requested = False
+		practical_tutorial_requested = False
+		if not intent_doctype:
+			intent_doctype = "User"
 	dependency_create_requested = bool(
 		state_action == "create_record"
 		and not show_save_requested

@@ -71,6 +71,16 @@ def maybe_handle_training_flow(
 		state_stock_type=state_stock_type,
 	)
 
+	manage_roles_reply = _handle_manage_roles_intent(
+		lang=lang,
+		manage_roles_requested=manage_roles_requested,
+		state_doctype=state_doctype,
+		context_doctype=context_doctype,
+		intent_doctype=intent_doctype,
+	)
+	if manage_roles_reply is not None:
+		return manage_roles_reply
+
 	if pending == "action":
 		return _handle_pending_action(
 			lang=lang,
@@ -104,16 +114,6 @@ def maybe_handle_training_flow(
 	)
 	if continue_flow_reply is not None:
 		return continue_flow_reply
-
-	manage_roles_reply = _handle_manage_roles_intent(
-		lang=lang,
-		manage_roles_requested=manage_roles_requested,
-		state_doctype=state_doctype,
-		context_doctype=context_doctype,
-		intent_doctype=intent_doctype,
-	)
-	if manage_roles_reply is not None:
-		return manage_roles_reply
 
 	create_or_intent_reply = _handle_create_or_intent(
 		lang=lang,
