@@ -272,12 +272,14 @@
 							this.append("assistant", String(text), { route_key: routeKey });
 						},
 					});
+					const isTutorial = this.isTutorialGuide(guide);
+					const alreadyThere = runResult?.already_there === true;
 
 				let reachedTarget = Boolean(runResult?.ok && runResult?.reached_target);
-				if (!reachedTarget && guide?.route && this.isRouteActive(guide.route)) {
+				if (!reachedTarget && !isTutorial && guide?.route && this.isRouteActive(guide.route)) {
 					reachedTarget = true;
 				}
-				if (!reachedTarget && guide?.route) {
+				if (!reachedTarget && !isTutorial && guide?.route) {
 					await new Promise((resolve) => window.setTimeout(resolve, 360));
 					if (this.isRouteActive(guide.route)) reachedTarget = true;
 				}
@@ -286,7 +288,7 @@
 					this.markGuideActionCompleted(messageTs, guide);
 					this.completeGuideButton(triggerEl);
 				}
-				if (runResult?.ok && runResult?.message) {
+				if (runResult?.ok && runResult?.message && !alreadyThere) {
 					this.append(
 						"assistant",
 						String(runResult.message),

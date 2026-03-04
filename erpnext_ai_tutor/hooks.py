@@ -49,7 +49,7 @@ def _compute_asset_version() -> str:
 
 ASSET_VERSION = _compute_asset_version()
 # Manual cache-bust suffix for forced client refresh when browser keeps stale JS.
-ASSET_VERSION = f"{ASSET_VERSION}-20260304-rolesflow-v1"
+ASSET_VERSION = f"{ASSET_VERSION}-20260304-rolesflow-v2"
 
 app_include_css = f"/assets/erpnext_ai_tutor/css/ai_tutor_widget.css?v={ASSET_VERSION}"
 app_include_js = [

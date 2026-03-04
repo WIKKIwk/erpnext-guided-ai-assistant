@@ -3369,8 +3369,8 @@
 				return {
 					ok: true,
 					reached_target: true,
-					already_there: true,
-					message: "Siz allaqachon shu yerdasiz.",
+					already_there: false,
+					message: "",
 				};
 				}
 				this.stop();
