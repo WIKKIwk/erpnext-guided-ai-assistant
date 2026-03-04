@@ -10,6 +10,8 @@ from erpnext_ai_tutor.tutor.navigation import build_navigation_plan
 from erpnext_ai_tutor.tutor.llm import call_llm
 
 
+APOSTROPHE_VARIANTS_RE = re.compile(r"[`’‘ʻʼ‛´]")
+
 CREATE_ACTION_RE = re.compile(
 	r"(?:\b(?:yangi|create|add|new|yarat[a-z\u0400-\u04FF'’_-]*|qo['’]?sh[a-z\u0400-\u04FF'’_-]*)\b)",
 	re.IGNORECASE,
@@ -60,6 +62,12 @@ AI_TARGET_ALIASES = {
 	"foydalanuvchilar": "User",
 }
 ALLOWED_INTENT_ACTIONS = {"create_record", "continue", "show_save", "other"}
+
+
+def _normalize_apostrophes(value: str) -> str:
+	"""Normalize common Uzbek apostrophe variants for regex-based intent rules."""
+	text = str(value or "")
+	return APOSTROPHE_VARIANTS_RE.sub("'", text)
 
 
 def _msg(lang: str, *, uz: str, ru: str, en: str) -> str:
@@ -376,7 +384,7 @@ def _extract_doctype_mention_from_text(user_message: str) -> str:
 
 
 def _extract_stock_entry_type_preference(user_message: str, doctype: str = "") -> str:
-	text = str(user_message or "").strip().lower()
+	text = _normalize_apostrophes(str(user_message or "")).strip().lower()
 	if not text:
 		return ""
 	if str(doctype or "").strip().lower() not in {"", "stock entry"}:
@@ -632,7 +640,7 @@ def _continue_tutorial_reply(lang: str, doctype: str, stage: str) -> str:
 
 
 def _needs_action_clarification(user_message: str) -> bool:
-	text = str(user_message or "").strip()
+	text = _normalize_apostrophes(str(user_message or "")).strip()
 	if len(text) > 140:
 		return False
 	if CREATE_ACTION_RE.search(text):
@@ -642,7 +650,7 @@ def _needs_action_clarification(user_message: str) -> bool:
 
 def _looks_like_practical_tutorial_request(user_message: str) -> bool:
 	"""Heuristic fallback when LLM intent classifier is uncertain."""
-	text = str(user_message or "").strip()
+	text = _normalize_apostrophes(str(user_message or "")).strip()
 	if not text:
 		return False
 	if PRACTICAL_TUTORIAL_RE.search(text):
@@ -658,11 +666,12 @@ def _build_training_reply(
 	reply: str,
 	tutor_state: Dict[str, Any] | None = None,
 	guide: Dict[str, Any] | None = None,
+	auto_guide: bool = True,
 ) -> Dict[str, Any]:
 	payload: Dict[str, Any] = {"ok": True, "reply": str(reply or "").strip()}
 	if guide:
 		payload["guide"] = guide
-		payload["auto_guide"] = False
+		payload["auto_guide"] = bool(auto_guide)
 	if tutor_state is not None:
 		payload["tutor_state"] = tutor_state
 	return payload
@@ -683,6 +692,7 @@ def maybe_handle_training_flow(
 	if not text:
 		return None
 
+	text_rules = _normalize_apostrophes(text)
 	state = _extract_state(ctx)
 	pending = str(state.get("pending") or "")
 	state_doctype = str(state.get("doctype") or "")
@@ -692,17 +702,22 @@ def maybe_handle_training_flow(
 	intent = _infer_training_intent_with_ai(text, has_active_tutorial=bool(state_action and state_doctype))
 	intent_action = str(intent.get("action") or "other").strip().lower()
 	intent_doctype = str(intent.get("doctype") or "").strip()
-	practical_tutorial_requested = _looks_like_practical_tutorial_request(text)
-	create_requested = bool(CREATE_ACTION_RE.search(text)) or practical_tutorial_requested or intent_action == "create_record"
-	continue_requested = bool(CONTINUE_ACTION_RE.search(text)) or intent_action == "continue"
-	show_save_requested = bool(SHOW_SAVE_RE.search(text)) or intent_action == "show_save"
-	explicit_mention_doctype = _extract_doctype_mention_from_text(text)
+	practical_tutorial_requested = _looks_like_practical_tutorial_request(text_rules)
+	create_requested = bool(CREATE_ACTION_RE.search(text_rules)) or practical_tutorial_requested or intent_action == "create_record"
+	continue_requested = bool(CONTINUE_ACTION_RE.search(text_rules)) or intent_action == "continue"
+	show_save_requested = bool(SHOW_SAVE_RE.search(text_rules)) or intent_action == "show_save"
+	explicit_mention_doctype = _extract_doctype_mention_from_text(text_rules)
 	explicit_target = _target_from_doctype(explicit_mention_doctype)
 	explicit_doctype = str(explicit_target.get("doctype") or "").strip()
 	requested_stock_type = _extract_stock_entry_type_preference(
-		text,
+		text_rules,
 		explicit_doctype or state_doctype or intent_doctype,
 	)
+
+	# When a tutorial is already active, "to'ldir / o'rgat" style follow-ups
+	# should continue the same guided flow unless user explicitly switches target.
+	if state_action == "create_record" and state_doctype and practical_tutorial_requested and not explicit_doctype and not show_save_requested:
+		continue_requested = True
 
 	def _resolve_training_target(*, allow_context_fallback: bool, fallback_doctype: str = "") -> Dict[str, Any]:
 		# User's direct doctype mention always wins over inferred intent.
@@ -740,7 +755,7 @@ def maybe_handle_training_flow(
 		if context_target and not explicit_doctype and (continue_requested or show_save_requested):
 			return context_target
 		return _resolve_doctype_target(
-			text,
+			text_rules,
 			ctx,
 			fallback_doctype=fallback_doctype,
 			allow_context_fallback=allow_context_fallback,
@@ -756,7 +771,7 @@ def maybe_handle_training_flow(
 		return ""
 
 	if pending == "action":
-		target = _resolve_training_target(allow_context_fallback=False)
+		target = _resolve_training_target(allow_context_fallback=False, fallback_doctype=state_doctype)
 		if target:
 			doctype = str(target.get("doctype") or "").strip()
 			reply = _start_tutorial_reply(lang, doctype)
@@ -777,7 +792,7 @@ def maybe_handle_training_flow(
 				),
 			)
 		if create_requested:
-			target = _resolve_training_target(allow_context_fallback=True)
+			target = _resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
 			if target:
 				doctype = str(target.get("doctype") or "").strip()
 				reply = _start_tutorial_reply(lang, doctype)
@@ -804,9 +819,9 @@ def maybe_handle_training_flow(
 		return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
 
 	if pending == "target":
-		target = _resolve_training_target(allow_context_fallback=False)
+		target = _resolve_training_target(allow_context_fallback=False, fallback_doctype=state_doctype)
 		if not target and create_requested:
-			target = _resolve_training_target(allow_context_fallback=True)
+			target = _resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
 		if not target:
 			return _build_training_reply(
 				reply=_target_clarify_reply(lang),
@@ -871,7 +886,7 @@ def maybe_handle_training_flow(
 			)
 
 	if create_requested or intent_doctype:
-		target = _resolve_training_target(allow_context_fallback=True)
+		target = _resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
 		if not target:
 			return _build_training_reply(
 				reply=_target_clarify_reply(lang),
@@ -896,7 +911,7 @@ def maybe_handle_training_flow(
 			),
 		)
 
-	if _needs_action_clarification(text):
+	if _needs_action_clarification(text_rules):
 		return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
 
 	return None
