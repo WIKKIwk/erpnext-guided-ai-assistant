@@ -2977,6 +2977,34 @@
 						}, "user_form_open_failed");
 					}
 				}
+				const isNewUserForm =
+					this.isOnDoctypeNewForm("User") ||
+					Boolean(window.cur_frm && typeof window.cur_frm.is_new === "function" && window.cur_frm.is_new());
+				if (isNewUserForm) {
+					const saveBtn = this.findSaveActionButton();
+					if (saveBtn) {
+						await this.focusElement(
+							saveBtn,
+							"Role qo'shishdan oldin userni saqlash kerak, `Save` joyini ko'rsataman (bosmayman).",
+							{
+								click: false,
+								duration_ms: 260,
+							}
+						);
+					}
+					return await finish(
+						{
+							ok: true,
+							reached_target: true,
+							message:
+								"Bu **New User (Not Saved)** forma. ERPNext'da role qo'shish maydoni user saqlangandan keyin chiqadi. `Save` ni bosing, keyin `davom et` deb yozing.",
+						},
+						"roles_requires_saved_user",
+						{
+							save_button_visible: Boolean(saveBtn),
+						}
+					);
+				}
 
 				if (isRolesSectionVisible()) {
 					rolesTabActivated = true;
