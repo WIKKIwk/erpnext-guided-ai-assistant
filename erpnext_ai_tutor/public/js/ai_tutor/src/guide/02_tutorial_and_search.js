@@ -29,9 +29,13 @@
 			return this.isDangerActionLabel(label);
 		}
 
-		isCreateTutorial(guide) {
-			return String(guide?.tutorial?.mode || "").trim().toLowerCase() === "create_record";
-		}
+			isCreateTutorial(guide) {
+				return String(guide?.tutorial?.mode || "").trim().toLowerCase() === "create_record";
+			}
+
+			isManageRolesTutorial(guide) {
+				return String(guide?.tutorial?.mode || "").trim().toLowerCase() === "manage_roles";
+			}
 
 		doctypeToRouteSlug(doctype) {
 			return String(doctype || "")
@@ -45,7 +49,7 @@
 			return String(guide?.tutorial?.doctype || guide?.target_label || "").trim();
 		}
 
-		isOnDoctypeNewForm(doctype) {
+			isOnDoctypeNewForm(doctype) {
 			const slug = this.doctypeToRouteSlug(doctype);
 			if (!slug) return false;
 			const path = this.normalizePath(window.location.pathname || "");
@@ -60,8 +64,25 @@
 			} catch {
 				// ignore
 			}
-			return false;
-		}
+				return false;
+			}
+
+			isOnDoctypeForm(doctype) {
+				const slug = this.doctypeToRouteSlug(doctype);
+				if (!slug) return false;
+				const path = this.normalizePath(window.location.pathname || "");
+				if (path.startsWith(`/app/${slug}/`) && !path.startsWith(`/app/${slug}/new-`)) return true;
+				try {
+					const route = Array.isArray(frappe?.get_route?.()) ? frappe.get_route() : [];
+					if (!route.length) return false;
+					const head = String(route[0] || "").trim().toLowerCase();
+					const second = String(route[1] || "").trim().toLowerCase();
+					if (head === "form" && second === String(doctype || "").trim().toLowerCase()) return true;
+				} catch {
+					// ignore
+				}
+				return false;
+			}
 
 			findCreateActionButton() {
 				const createRe = /\b(add|new|create|yangi|qo['’]?sh|добав|созд)\b/i;
@@ -199,5 +220,4 @@
 				if (domLabel?.textContent) return String(domLabel.textContent).replace(/\s+/g, " ").trim();
 				return key;
 			}
-
 

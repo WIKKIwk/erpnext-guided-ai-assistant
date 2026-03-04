@@ -1,7 +1,9 @@
 			async run(guideRaw, runOptions = {}) {
 				const guide = this.normalizeGuide(guideRaw);
 				if (!guide) return { ok: false, message: "Guide payload noto'g'ri." };
-				const isTutorial = this.isCreateTutorial(guide);
+				const isCreateTutorial = this.isCreateTutorial(guide);
+				const isManageRolesTutorial = this.isManageRolesTutorial(guide);
+				const isTutorial = Boolean(isCreateTutorial || isManageRolesTutorial);
 			if (!isTutorial && guide.route && this.isAtRoute(guide.route)) {
 				return {
 					ok: true,
@@ -131,7 +133,9 @@
 				if (result.ok && isTutorial) {
 					let tutorialResult = null;
 					try {
-						tutorialResult = await this.runCreateRecordTutorial(guide);
+						tutorialResult = isCreateTutorial
+							? await this.runCreateRecordTutorial(guide)
+							: await this.runManageRolesTutorial(guide);
 					} catch (err) {
 						await this.flushTutorialTrace("tutorial_exception", {
 							error: String(err?.message || err || "").trim(),

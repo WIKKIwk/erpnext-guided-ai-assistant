@@ -201,7 +201,7 @@ class TrainingFlowLogicTests(unittest.TestCase):
 		)
 		self.assertIsNone(result)
 
-	def test_manage_roles_intent_returns_navigation_guide_without_tutorial(self):
+	def test_manage_roles_intent_returns_manage_roles_tutorial_guide(self):
 		result = _handle_manage_roles_intent(
 			lang="uz",
 			manage_roles_requested=True,
@@ -211,7 +211,7 @@ class TrainingFlowLogicTests(unittest.TestCase):
 		)
 		self.assertEqual(result.get("guide", {}).get("route"), "/app/user")
 		self.assertEqual(result.get("guide", {}).get("target_label"), "User")
-		self.assertNotIn("tutorial", result.get("guide", {}))
+		self.assertEqual(result.get("guide", {}).get("tutorial", {}).get("mode"), "manage_roles")
 		self.assertEqual(result.get("tutor_state"), {})
 
 	def test_manage_roles_intent_prefers_user_even_when_intent_mentions_role(self):

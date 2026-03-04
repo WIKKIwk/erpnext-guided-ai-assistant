@@ -294,3 +294,117 @@
 								blocked_links: blockedLinkHints,
 							});
 						}
+
+			async runManageRolesTutorial(guide) {
+				if (!this.isManageRolesTutorial(guide)) return { ok: true, reached_target: true, message: "" };
+				const doctype = this.getTutorialDoctype(guide) || "User";
+				this.emitProgress(`🔐 **${doctype}** uchun role qo'shish bosqichini boshladim.`);
+
+				if (guide?.route && !this.isAtRoute(guide.route)) {
+					const opened = await this.navigate(guide.route);
+					if (!opened) {
+						return {
+							ok: false,
+							reached_target: false,
+							message: "User bo'limini ochib bo'lmadi. Ruxsat va menyuni tekshirib qayta urinib ko'ring.",
+						};
+					}
+				}
+
+				if (!this.isOnDoctypeForm("User")) {
+					const rowSelectors = [
+						"a[href^='/app/user/']:not([href='/app/user']):not([href='/app/users'])",
+						".list-row-container a[href*='/app/user/']",
+						".result-list a[href*='/app/user/']",
+					];
+					let rowLink = null;
+					for (const sel of rowSelectors) {
+						const nodes = document.querySelectorAll(sel);
+						for (const node of nodes) {
+							const clickable = getClickable(node) || node;
+							if (clickable && isVisible(clickable)) {
+								rowLink = clickable;
+								break;
+							}
+						}
+						if (rowLink) break;
+					}
+					if (!rowLink) {
+						return {
+							ok: true,
+							reached_target: true,
+							message: "User ro'yxatidan kerakli user kartasini oching, keyin yana `davom et` deb yozing.",
+						};
+					}
+					await this.focusElement(rowLink, "Kerakli user kartasini ochamiz.", {
+						click: true,
+						duration_ms: 320,
+						pre_click_pause_ms: 120,
+					});
+					await this.waitFor(() => this.isOnDoctypeForm("User"), 4200, 120);
+				}
+
+				const tabLabels = ["Roles & Permissions", "Roles and Permissions", "Roles & Permission", "Roles"];
+				let rolesTab = null;
+				for (const label of tabLabels) {
+					const match = this.findByLabelCandidate(label, { allowHidden: false });
+					if (match?.el) {
+						rolesTab = match.el;
+						break;
+					}
+				}
+				if (rolesTab) {
+					await this.focusElement(rolesTab, "`Roles & Permissions` bo'limiga o'tamiz.", {
+						click: true,
+						duration_ms: 300,
+						pre_click_pause_ms: 120,
+					});
+					await this.sleep(180);
+				}
+
+				const rolesRoot = await this.waitFor(
+					() => document.querySelector(".frappe-control[data-fieldname='roles']"),
+					2600,
+					120
+				);
+				if (!rolesRoot) {
+					return {
+						ok: false,
+						reached_target: false,
+						message: "`Roles` jadvalini topa olmadim. Sahifani yangilab qayta urinib ko'ring.",
+					};
+				}
+
+				const addRowBtn =
+					rolesRoot.querySelector(".grid-add-row") ||
+					rolesRoot.querySelector(".btn[data-label*='Add Row']") ||
+					rolesRoot.querySelector("button[data-label*='Add Row']");
+				if (addRowBtn && isVisible(addRowBtn)) {
+					await this.focusElement(addRowBtn, "`Add Row` ni bosib yangi role qatori ochamiz.", {
+						click: true,
+						duration_ms: 300,
+						pre_click_pause_ms: 120,
+					});
+					await this.sleep(180);
+				}
+
+				const roleInput = await this.waitFor(
+					() =>
+						rolesRoot.querySelector(".grid-row[data-idx] [data-fieldname='role'] input:not([type='hidden'])") ||
+						rolesRoot.querySelector(".grid-row-open [data-fieldname='role'] input:not([type='hidden'])"),
+					2200,
+					120
+				);
+				if (roleInput) {
+					await this.focusElement(roleInput, "Endi shu yerga kerakli roleni tanlaymiz (masalan: System Manager).", {
+						click: false,
+						duration_ms: 260,
+					});
+				}
+
+				return {
+					ok: true,
+					reached_target: true,
+					message: "Role qo'shish qatorini ochdim. Endi role qiymatini tanlang, `Save` ni esa o'zingiz bosing.",
+				};
+			}

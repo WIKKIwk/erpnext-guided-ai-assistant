@@ -189,6 +189,11 @@ def _handle_manage_roles_intent(
 			"route": route,
 			"target_label": doctype,
 			"menu_path": menu_path,
+			"tutorial": {
+				"mode": "manage_roles",
+				"doctype": doctype,
+				"stage": "open_roles_tab",
+			},
 		},
 		# Switching from create tutorial to role-management should clear stale tutorial state.
 		tutor_state={},

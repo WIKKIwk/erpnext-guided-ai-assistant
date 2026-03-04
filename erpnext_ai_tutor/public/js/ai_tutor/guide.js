@@ -1169,9 +1169,13 @@
 			return this.isDangerActionLabel(label);
 		}
 
-		isCreateTutorial(guide) {
-			return String(guide?.tutorial?.mode || "").trim().toLowerCase() === "create_record";
-		}
+			isCreateTutorial(guide) {
+				return String(guide?.tutorial?.mode || "").trim().toLowerCase() === "create_record";
+			}
+
+			isManageRolesTutorial(guide) {
+				return String(guide?.tutorial?.mode || "").trim().toLowerCase() === "manage_roles";
+			}
 
 		doctypeToRouteSlug(doctype) {
 			return String(doctype || "")
@@ -1185,7 +1189,7 @@
 			return String(guide?.tutorial?.doctype || guide?.target_label || "").trim();
 		}
 
-		isOnDoctypeNewForm(doctype) {
+			isOnDoctypeNewForm(doctype) {
 			const slug = this.doctypeToRouteSlug(doctype);
 			if (!slug) return false;
 			const path = this.normalizePath(window.location.pathname || "");
@@ -2865,6 +2869,120 @@
 								blocked_links: blockedLinkHints,
 							});
 						}
+
+			async runManageRolesTutorial(guide) {
+				if (!this.isManageRolesTutorial(guide)) return { ok: true, reached_target: true, message: "" };
+				const doctype = this.getTutorialDoctype(guide) || "User";
+				this.emitProgress(`🔐 **${doctype}** uchun role qo'shish bosqichini boshladim.`);
+
+				if (guide?.route && !this.isAtRoute(guide.route)) {
+					const opened = await this.navigate(guide.route);
+					if (!opened) {
+						return {
+							ok: false,
+							reached_target: false,
+							message: "User bo'limini ochib bo'lmadi. Ruxsat va menyuni tekshirib qayta urinib ko'ring.",
+						};
+					}
+				}
+
+				if (!this.isOnDoctypeForm("User")) {
+					const rowSelectors = [
+						"a[href^='/app/user/']:not([href='/app/user']):not([href='/app/users'])",
+						".list-row-container a[href*='/app/user/']",
+						".result-list a[href*='/app/user/']",
+					];
+					let rowLink = null;
+					for (const sel of rowSelectors) {
+						const nodes = document.querySelectorAll(sel);
+						for (const node of nodes) {
+							const clickable = getClickable(node) || node;
+							if (clickable && isVisible(clickable)) {
+								rowLink = clickable;
+								break;
+							}
+						}
+						if (rowLink) break;
+					}
+					if (!rowLink) {
+						return {
+							ok: true,
+							reached_target: true,
+							message: "User ro'yxatidan kerakli user kartasini oching, keyin yana `davom et` deb yozing.",
+						};
+					}
+					await this.focusElement(rowLink, "Kerakli user kartasini ochamiz.", {
+						click: true,
+						duration_ms: 320,
+						pre_click_pause_ms: 120,
+					});
+					await this.waitFor(() => this.isOnDoctypeForm("User"), 4200, 120);
+				}
+
+				const tabLabels = ["Roles & Permissions", "Roles and Permissions", "Roles & Permission", "Roles"];
+				let rolesTab = null;
+				for (const label of tabLabels) {
+					const match = this.findByLabelCandidate(label, { allowHidden: false });
+					if (match?.el) {
+						rolesTab = match.el;
+						break;
+					}
+				}
+				if (rolesTab) {
+					await this.focusElement(rolesTab, "`Roles & Permissions` bo'limiga o'tamiz.", {
+						click: true,
+						duration_ms: 300,
+						pre_click_pause_ms: 120,
+					});
+					await this.sleep(180);
+				}
+
+				const rolesRoot = await this.waitFor(
+					() => document.querySelector(".frappe-control[data-fieldname='roles']"),
+					2600,
+					120
+				);
+				if (!rolesRoot) {
+					return {
+						ok: false,
+						reached_target: false,
+						message: "`Roles` jadvalini topa olmadim. Sahifani yangilab qayta urinib ko'ring.",
+					};
+				}
+
+				const addRowBtn =
+					rolesRoot.querySelector(".grid-add-row") ||
+					rolesRoot.querySelector(".btn[data-label*='Add Row']") ||
+					rolesRoot.querySelector("button[data-label*='Add Row']");
+				if (addRowBtn && isVisible(addRowBtn)) {
+					await this.focusElement(addRowBtn, "`Add Row` ni bosib yangi role qatori ochamiz.", {
+						click: true,
+						duration_ms: 300,
+						pre_click_pause_ms: 120,
+					});
+					await this.sleep(180);
+				}
+
+				const roleInput = await this.waitFor(
+					() =>
+						rolesRoot.querySelector(".grid-row[data-idx] [data-fieldname='role'] input:not([type='hidden'])") ||
+						rolesRoot.querySelector(".grid-row-open [data-fieldname='role'] input:not([type='hidden'])"),
+					2200,
+					120
+				);
+				if (roleInput) {
+					await this.focusElement(roleInput, "Endi shu yerga kerakli roleni tanlaymiz (masalan: System Manager).", {
+						click: false,
+						duration_ms: 260,
+					});
+				}
+
+				return {
+					ok: true,
+					reached_target: true,
+					message: "Role qo'shish qatorini ochdim. Endi role qiymatini tanlang, `Save` ni esa o'zingiz bosing.",
+				};
+			}
 		getSearchQuery(guide, step) {
 			const stepLabel = String(step?.label || "").trim();
 			const targetLabel = String(guide?.target_label || "").trim();
@@ -2947,10 +3065,27 @@
 				input.dispatchEvent(new KeyboardEvent("keypress", eventInit));
 				input.dispatchEvent(new KeyboardEvent("keyup", eventInit));
 				return true;
-			} catch {
-				return false;
+				} catch {
+					return false;
+				}
 			}
-		}
+
+			isOnDoctypeForm(doctype) {
+				const slug = this.doctypeToRouteSlug(doctype);
+				if (!slug) return false;
+				const path = this.normalizePath(window.location.pathname || "");
+				if (path.startsWith(`/app/${slug}/`) && !path.startsWith(`/app/${slug}/new-`)) return true;
+				try {
+					const route = Array.isArray(frappe?.get_route?.()) ? frappe.get_route() : [];
+					if (!route.length) return false;
+					const head = String(route[0] || "").trim().toLowerCase();
+					const second = String(route[1] || "").trim().toLowerCase();
+					if (head === "form" && second === String(doctype || "").trim().toLowerCase()) return true;
+				} catch {
+					// ignore
+					}
+					return false;
+				}
 
 		async trySearchFallback(step, guide) {
 			if (!this.running || !guide?.route) return false;
@@ -3227,7 +3362,9 @@
 			async run(guideRaw, runOptions = {}) {
 				const guide = this.normalizeGuide(guideRaw);
 				if (!guide) return { ok: false, message: "Guide payload noto'g'ri." };
-				const isTutorial = this.isCreateTutorial(guide);
+				const isCreateTutorial = this.isCreateTutorial(guide);
+				const isManageRolesTutorial = this.isManageRolesTutorial(guide);
+				const isTutorial = Boolean(isCreateTutorial || isManageRolesTutorial);
 			if (!isTutorial && guide.route && this.isAtRoute(guide.route)) {
 				return {
 					ok: true,
@@ -3357,7 +3494,9 @@
 				if (result.ok && isTutorial) {
 					let tutorialResult = null;
 					try {
-						tutorialResult = await this.runCreateRecordTutorial(guide);
+						tutorialResult = isCreateTutorial
+							? await this.runCreateRecordTutorial(guide)
+							: await this.runManageRolesTutorial(guide);
 					} catch (err) {
 						await this.flushTutorialTrace("tutorial_exception", {
 							error: String(err?.message || err || "").trim(),

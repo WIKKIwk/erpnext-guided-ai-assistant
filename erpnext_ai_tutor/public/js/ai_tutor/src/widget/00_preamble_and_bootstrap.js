@@ -243,30 +243,36 @@
 				.filter(Boolean)
 				.slice(0, 6);
 			const targetLabel = String(raw.target_label || "").trim();
-			const tutorialRaw = raw.tutorial;
-			let tutorial = null;
-				if (tutorialRaw && typeof tutorialRaw === "object") {
-					const mode = String(tutorialRaw.mode || "").trim().toLowerCase();
-					const stageRaw = String(tutorialRaw.stage || "open_and_fill_basic").trim().toLowerCase();
-					const allowedStages = new Set(["open_and_fill_basic", "fill_more", "show_save_only"]);
-					const stockEntryTypePreference = normalizeStockEntryTypePreference(
-						tutorialRaw.stock_entry_type_preference
-					);
-					const allowDependencyCreation = tutorialRaw.allow_dependency_creation === true;
-					if (mode === "create_record") {
-						tutorial = {
-							mode,
-							stage: allowedStages.has(stageRaw) ? stageRaw : "open_and_fill_basic",
-							doctype: String(tutorialRaw.doctype || "").trim(),
-						};
-						if (stockEntryTypePreference) {
-							tutorial.stock_entry_type_preference = stockEntryTypePreference;
-						}
-						if (allowDependencyCreation) {
-							tutorial.allow_dependency_creation = true;
+				const tutorialRaw = raw.tutorial;
+				let tutorial = null;
+					if (tutorialRaw && typeof tutorialRaw === "object") {
+						const mode = String(tutorialRaw.mode || "").trim().toLowerCase();
+						const stageRaw = String(tutorialRaw.stage || "open_and_fill_basic").trim().toLowerCase();
+						const allowedStages = new Set(["open_and_fill_basic", "fill_more", "show_save_only"]);
+						const stockEntryTypePreference = normalizeStockEntryTypePreference(
+							tutorialRaw.stock_entry_type_preference
+						);
+						const allowDependencyCreation = tutorialRaw.allow_dependency_creation === true;
+						if (mode === "create_record") {
+							tutorial = {
+								mode,
+								stage: allowedStages.has(stageRaw) ? stageRaw : "open_and_fill_basic",
+								doctype: String(tutorialRaw.doctype || "").trim(),
+							};
+							if (stockEntryTypePreference) {
+								tutorial.stock_entry_type_preference = stockEntryTypePreference;
+							}
+							if (allowDependencyCreation) {
+								tutorial.allow_dependency_creation = true;
+							}
+						} else if (mode === "manage_roles") {
+							tutorial = {
+								mode,
+								stage: stageRaw || "open_roles_tab",
+								doctype: String(tutorialRaw.doctype || "").trim() || "User",
+							};
 						}
 					}
-				}
 			const repaired = this.applyGuideRouteOverride(route, targetLabel, menuPath);
 			return {
 				type: "navigation",
@@ -346,7 +352,8 @@
 		isGuideTargetActive(guideRaw) {
 			const guide = this.normalizeGuidePayload(guideRaw);
 			if (!guide?.route) return false;
-			if (String(guide?.tutorial?.mode || "").trim().toLowerCase() === "create_record") {
+			const tutorialMode = String(guide?.tutorial?.mode || "").trim().toLowerCase();
+			if (tutorialMode === "create_record" || tutorialMode === "manage_roles") {
 				return false;
 			}
 			return this.isRouteActive(guide.route);
@@ -354,7 +361,8 @@
 
 		isTutorialGuide(guideRaw) {
 			const guide = this.normalizeGuidePayload(guideRaw);
-			return String(guide?.tutorial?.mode || "").trim().toLowerCase() === "create_record";
+			const tutorialMode = String(guide?.tutorial?.mode || "").trim().toLowerCase();
+			return tutorialMode === "create_record" || tutorialMode === "manage_roles";
 		}
 
 		isCurrentRouteMentionedInBubble(container) {
