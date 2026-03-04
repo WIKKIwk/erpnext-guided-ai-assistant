@@ -1623,6 +1623,7 @@
 					const label = String(df?.label || df?.fieldname || "Field").trim();
 					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
 					if (this.isEmailField(df)) return this.makeDemoEmail(df);
+					if (this.isPhoneLikeField(df)) return this.normalizePhoneDemoValue(`Demo ${label}`);
 					if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) return "1";
 					if (fieldtype === "Select") {
 						const preferred =
@@ -1642,6 +1643,26 @@
 					if (options === "email" || options.includes("email")) return true;
 					if (fieldname.includes("email") || label.includes("email")) return true;
 					return false;
+				}
+
+				isPhoneLikeField(df) {
+					const fieldname = String(df?.fieldname || "").trim().toLowerCase();
+					const label = String(df?.label || "").trim().toLowerCase();
+					const options = String(df?.options || "").trim().toLowerCase();
+					return (
+						fieldname.includes("phone") ||
+						fieldname.includes("mobile") ||
+						label.includes("phone") ||
+						label.includes("mobile") ||
+						options.includes("phone") ||
+						options.includes("mobile")
+					);
+				}
+
+				normalizePhoneDemoValue(value = "") {
+					const digits = String(value || "").replace(/\D+/g, "");
+					if (digits.length >= 7) return digits.slice(0, 15);
+					return "998901234567";
 				}
 
 				isValidEmailValue(value) {
@@ -1749,6 +1770,9 @@
 						const wanted = String(rawValue || "").trim();
 						return this.isValidEmailValue(wanted) ? wanted : this.makeDemoEmail(df);
 					}
+					if (this.isPhoneLikeField(df)) {
+						return this.normalizePhoneDemoValue(rawValue);
+					}
 					if (fieldtype === "Link") {
 						const linkDoctype = String(df?.options || "").trim();
 						const hint = String(rawValue || "").trim();
@@ -1854,6 +1878,29 @@
 				getFormFieldSamplePlans(doctype, stage = "open_and_fill_basic") {
 					const dt = String(doctype || "").trim();
 					const lower = dt.toLowerCase();
+					if (lower === "user") {
+						if (stage === "fill_more") return [];
+						return [
+							{
+								fieldname: "email",
+								label: "Email",
+								value: "demo.email@example.com",
+								reason: "foydalanuvchi identifikatori uchun",
+							},
+							{
+								fieldname: "first_name",
+								label: "First Name",
+								value: "Demo First Name",
+								reason: "asosiy user ma'lumoti uchun",
+							},
+							{
+								fieldname: "username",
+								label: "Username",
+								value: "demo.user",
+								reason: "login nomini ko'rsatish uchun",
+							},
+						];
+					}
 					if (lower === "item") {
 					const base = [
 						{
@@ -2754,8 +2801,12 @@
 							blocked_links: Array.isArray(fillResult?.blockedLinkHints) ? fillResult.blockedLinkHints.length : 0,
 						});
 
-					// Always do one deeper pass so tutor fills more than a single field when possible.
-					if (stageToRun !== "fill_more" && this.running) {
+					// For User onboarding, keep first run focused on User Details only.
+					const shouldRunDeepPass =
+						stageToRun !== "fill_more" &&
+						this.running &&
+						String(doctype || "").trim().toLowerCase() !== "user";
+					if (shouldRunDeepPass) {
 						this.emitProgress("🔍 Qo'shimcha batafsil pass: yana ko'proq mos maydonlarni to'ldirishga harakat qilaman.");
 							const deepPlanResult = await this.requestAIFieldPlan(doctype, "fill_more");
 							this.traceTutorialEvent("plan.deep", {

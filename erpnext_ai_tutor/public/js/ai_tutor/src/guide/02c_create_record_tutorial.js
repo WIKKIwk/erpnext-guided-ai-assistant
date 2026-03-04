@@ -170,8 +170,12 @@
 							blocked_links: Array.isArray(fillResult?.blockedLinkHints) ? fillResult.blockedLinkHints.length : 0,
 						});
 
-					// Always do one deeper pass so tutor fills more than a single field when possible.
-					if (stageToRun !== "fill_more" && this.running) {
+					// For User onboarding, keep first run focused on User Details only.
+					const shouldRunDeepPass =
+						stageToRun !== "fill_more" &&
+						this.running &&
+						String(doctype || "").trim().toLowerCase() !== "user";
+					if (shouldRunDeepPass) {
 						this.emitProgress("🔍 Qo'shimcha batafsil pass: yana ko'proq mos maydonlarni to'ldirishga harakat qilaman.");
 							const deepPlanResult = await this.requestAIFieldPlan(doctype, "fill_more");
 							this.traceTutorialEvent("plan.deep", {
