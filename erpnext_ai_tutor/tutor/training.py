@@ -9,6 +9,12 @@ from erpnext_ai_tutor.tutor.training_heuristics import (
 	_looks_like_practical_tutorial_request,
 	_needs_action_clarification,
 )
+from erpnext_ai_tutor.tutor.training_handlers import (
+	_handle_active_continue,
+	_handle_create_or_intent,
+	_handle_pending_action,
+	_handle_pending_target,
+)
 from erpnext_ai_tutor.tutor.training_patterns import (
 	ALLOWED_STOCK_ENTRY_TYPES,
 	CONTINUE_ACTION_RE,
@@ -19,18 +25,12 @@ from erpnext_ai_tutor.tutor.training_patterns import (
 from erpnext_ai_tutor.tutor.training_resolution import _resolve_doctype_target
 from erpnext_ai_tutor.tutor.training_replies import (
 	_action_clarify_reply,
-	_target_clarify_reply,
 )
 from erpnext_ai_tutor.tutor.training_state import (
 	_build_training_reply,
 	_extract_state,
 )
-from erpnext_ai_tutor.tutor.training_steps import (
-	_build_continue_step_response,
-	_build_start_step_response,
-)
 from erpnext_ai_tutor.tutor.training_targets import (
-	_doctype_to_slug,
 	_extract_doctype_mention_from_text,
 	_extract_stock_entry_type_preference,
 	_infer_doctype_from_context,
@@ -132,96 +132,48 @@ def maybe_handle_training_flow(
 		return ""
 
 	if pending == "action":
-		target = _resolve_training_target(allow_context_fallback=False, fallback_doctype=state_doctype)
-		if target:
-			doctype = str(target.get("doctype") or "").strip()
-			return _build_start_step_response(
-				lang=lang,
-				doctype=doctype,
-				route=str(target.get("route") or ""),
-				menu_path=target.get("menu_path") or [],
-				stock_entry_type_preference=_pick_stock_entry_type(doctype),
-			)
-		if create_requested:
-			target = _resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
-			if target:
-				doctype = str(target.get("doctype") or "").strip()
-				return _build_start_step_response(
-					lang=lang,
-					doctype=doctype,
-					route=str(target.get("route") or ""),
-					menu_path=target.get("menu_path") or [],
-					stock_entry_type_preference=_pick_stock_entry_type(doctype),
-				)
-			return _build_training_reply(
-				reply=_target_clarify_reply(lang),
-				tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
-			)
-		return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
+		return _handle_pending_action(
+			lang=lang,
+			state_doctype=state_doctype,
+			create_requested=create_requested,
+			resolve_training_target=_resolve_training_target,
+			pick_stock_entry_type=_pick_stock_entry_type,
+		)
 
 	if pending == "target":
-		target = _resolve_training_target(allow_context_fallback=False, fallback_doctype=state_doctype)
-		if not target and create_requested:
-			target = _resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
-		if not target:
-			return _build_training_reply(
-				reply=_target_clarify_reply(lang),
-				tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
-			)
-		doctype = str(target.get("doctype") or "").strip()
-		return _build_start_step_response(
+		return _handle_pending_target(
 			lang=lang,
-			doctype=doctype,
-			route=str(target.get("route") or ""),
-			menu_path=target.get("menu_path") or [],
-			stock_entry_type_preference=_pick_stock_entry_type(doctype),
+			state_doctype=state_doctype,
+			create_requested=create_requested,
+			resolve_training_target=_resolve_training_target,
+			pick_stock_entry_type=_pick_stock_entry_type,
 		)
 
-	if state_action == "create_record" and state_doctype and (continue_requested or show_save_requested):
-		if create_requested and explicit_doctype and explicit_doctype.lower() != state_doctype.lower():
-			continue_requested = False
-			show_save_requested = False
-		else:
-			stage = "show_save_only" if show_save_requested else "fill_more"
-			effective_state_doctype = state_doctype
-			if (
-				context_doctype
-				and not explicit_doctype
-				and str(context_doctype).strip().lower() != str(state_doctype).strip().lower()
-			):
-				effective_state_doctype = str(context_doctype).strip()
-			target = _resolve_doctype_target(
-				effective_state_doctype,
-				ctx,
-				fallback_doctype=effective_state_doctype,
-			)
-			doctype = str(target.get("doctype") or effective_state_doctype).strip()
-			route = str(target.get("route") or f"/app/{_doctype_to_slug(doctype)}")
-			menu_path = target.get("menu_path") or [doctype]
-			return _build_continue_step_response(
-				lang=lang,
-				doctype=doctype,
-				stage=stage,
-				route=route,
-				menu_path=menu_path,
-				stock_entry_type_preference=_pick_stock_entry_type(doctype),
-			)
+	continue_flow_reply = _handle_active_continue(
+		lang=lang,
+		ctx=ctx,
+		state_action=state_action,
+		state_doctype=state_doctype,
+		context_doctype=context_doctype,
+		continue_requested=continue_requested,
+		show_save_requested=show_save_requested,
+		create_requested=create_requested,
+		explicit_doctype=explicit_doctype,
+		pick_stock_entry_type=_pick_stock_entry_type,
+	)
+	if continue_flow_reply is not None:
+		return continue_flow_reply
 
-	if create_requested or intent_doctype:
-		target = _resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
-		if not target:
-			return _build_training_reply(
-				reply=_target_clarify_reply(lang),
-				tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
-			)
-		doctype = str(target.get("doctype") or "").strip()
-		return _build_start_step_response(
-			lang=lang,
-			doctype=doctype,
-			route=str(target.get("route") or ""),
-			menu_path=target.get("menu_path") or [],
-			stock_entry_type_preference=_pick_stock_entry_type(doctype),
-		)
+	create_or_intent_reply = _handle_create_or_intent(
+		lang=lang,
+		state_doctype=state_doctype,
+		create_requested=create_requested,
+		intent_doctype=intent_doctype,
+		resolve_training_target=_resolve_training_target,
+		pick_stock_entry_type=_pick_stock_entry_type,
+	)
+	if create_or_intent_reply is not None:
+		return create_or_intent_reply
 
 	if _needs_action_clarification(text_rules):
 		return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
