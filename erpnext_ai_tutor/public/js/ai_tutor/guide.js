@@ -2922,7 +2922,6 @@
 			}
 			return `Men "${label}" tugmasini aniq topa olmadim, shuning uchun noto'g'ri bosishni to'xtatdim. Hozir ko'rinayotgan elementlar: ${visibleText}.`;
 		}
-
 			async run(guideRaw, runOptions = {}) {
 				const guide = this.normalizeGuide(guideRaw);
 				if (!guide) return { ok: false, message: "Guide payload noto'g'ri." };
