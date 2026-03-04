@@ -783,6 +783,7 @@
 					const plans = this.buildMergedFieldPlans(doctype, stage, plannedRows, fallbackPlans);
 					let filled = 0;
 					const filledLabels = [];
+					const backgroundFilledLabels = [];
 					const blockedLinkHints = [];
 					const failedRequired = new Set();
 					for (const plan of plans) {
@@ -820,11 +821,19 @@
 						if (!input) {
 							const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
 							if (modelOnlyOk) {
-								filled += 1;
-								if (!filledLabels.includes(label)) filledLabels.push(label);
-								this.emitProgress(
-									`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi (model fallback), sababi: ${reason}.`
-								);
+								const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
+								if (confirmed) {
+									filled += 1;
+									if (!filledLabels.includes(label)) filledLabels.push(label);
+									this.emitProgress(
+										`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi, sababi: ${reason}.`
+									);
+								} else {
+									if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+									this.emitProgress(
+										`ℹ️ **${label}** uchun qiymat model fallback orqali berildi, lekin UI'da aniq tasdiqlanmagani uchun hisobga qo'shmadim.`
+									);
+								}
 							} else {
 								this.emitProgress(`⚠️ **${label}** maydoni UIda topilmadi va model orqali ham to'ldirib bo'lmadi.`);
 							}
@@ -851,11 +860,19 @@
 						} else {
 							const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
 							if (fallbackOk) {
-								filled += 1;
-								if (!filledLabels.includes(label)) filledLabels.push(label);
-								this.emitProgress(
-									`✅ **${label}** maydoni model fallback orqali \`${String(valueToType || "").trim()}\` qiymatiga to'ldirildi, sababi: ${reason}.`
-								);
+								const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
+								if (confirmed) {
+									filled += 1;
+									if (!filledLabels.includes(label)) filledLabels.push(label);
+									this.emitProgress(
+										`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi, sababi: ${reason}.`
+									);
+								} else {
+									if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+									this.emitProgress(
+										`ℹ️ **${label}** model fallback bilan berildi, lekin UI tasdiqlamagani uchun asosiy countga qo'shmadim.`
+									);
+								}
 							} else {
 								this.emitProgress(`⚠️ **${label}** qiymati form tomonidan qabul qilinmadi, qayta tekshirish kerak.`);
 							}
@@ -891,20 +908,26 @@
 								continue;
 							}
 
-							await this.ensureFieldTabVisible(fieldname, label);
-							const input = this.findFieldInput(fieldname, { allowHidden: false });
-							if (!input) {
-								const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
-								if (modelOnlyOk) {
-									filled += 1;
-									roundProgress = true;
-									if (!filledLabels.includes(label)) filledLabels.push(label);
-									this.emitProgress(`✅ Majburiy **${label}** maydoni model fallback orqali to'ldirildi.`);
-								} else {
-									failedRequired.add(fieldname);
+								await this.ensureFieldTabVisible(fieldname, label);
+								const input = this.findFieldInput(fieldname, { allowHidden: false });
+								if (!input) {
+									const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
+									if (modelOnlyOk) {
+										const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
+										if (confirmed) {
+											filled += 1;
+											roundProgress = true;
+											if (!filledLabels.includes(label)) filledLabels.push(label);
+											this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
+										} else {
+											if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+											failedRequired.add(fieldname);
+										}
+									} else {
+										failedRequired.add(fieldname);
+									}
+									continue;
 								}
-								continue;
-							}
 
 							const focused = await this.focusElement(input, `Majburiy **${label}** maydonini to'ldiramiz.`, {
 								click: true,
@@ -919,33 +942,40 @@
 							await this.sleep(120);
 							const afterVal = this.readFieldValue(fieldname);
 							const reallyFilled = ok && this.isFieldValueFilled(df, afterVal) && !this.isControlInvalid(fieldname);
-							if (reallyFilled) {
-								filled += 1;
-								roundProgress = true;
-								if (!filledLabels.includes(label)) filledLabels.push(label);
-								this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
-							} else {
-								const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
-								if (fallbackOk) {
+								if (reallyFilled) {
 									filled += 1;
 									roundProgress = true;
 									if (!filledLabels.includes(label)) filledLabels.push(label);
-									this.emitProgress(`✅ Majburiy **${label}** maydoni model fallback orqali to'ldirildi.`);
+									this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
 								} else {
-									failedRequired.add(fieldname);
+									const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
+									if (fallbackOk) {
+										const confirmed = await this.verifyVisibleFieldConfirmation(fieldname, df, label);
+										if (confirmed) {
+											filled += 1;
+											roundProgress = true;
+											if (!filledLabels.includes(label)) filledLabels.push(label);
+											this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
+										} else {
+											if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+											failedRequired.add(fieldname);
+										}
+									} else {
+										failedRequired.add(fieldname);
+									}
 								}
-							}
 						}
 						if (!roundProgress) break;
 					}
 					const missingRequired = this.collectMissingRequiredFields(doctype);
-					return {
-						filled,
-						filledLabels,
-						missingRequiredLabels: missingRequired.map((x) => String(x.label || x.fieldname || "").trim()).filter(Boolean),
-						blockedLinkHints: [...new Set(blockedLinkHints)],
-					};
-				}
+						return {
+							filled,
+							filledLabels,
+							backgroundFilledLabels,
+							missingRequiredLabels: missingRequired.map((x) => String(x.label || x.fieldname || "").trim()).filter(Boolean),
+							blockedLinkHints: [...new Set(blockedLinkHints)],
+						};
+					}
 
 				detectStockEntryPurpose() {
 					const raw = String(this.readFieldValue("stock_entry_type") || this.readFieldValue("purpose") || "")
@@ -1010,6 +1040,16 @@
 						} catch {
 							return false;
 						}
+					}
+
+					async verifyVisibleFieldConfirmation(fieldname, df, label = "") {
+						const key = String(fieldname || "").trim();
+						if (!key) return false;
+						await this.ensureFieldTabVisible(key, label || this.getFieldLabel(key));
+						const input = this.findFieldInput(key, { allowHidden: false });
+						if (!input) return false;
+						const value = this.readFieldValue(key);
+						return this.isFieldValueFilled(df, value) && !this.isControlInvalid(key);
 					}
 
 				async getItemsGridInput(row, fieldname) {
@@ -1298,12 +1338,16 @@
 					const stageToRun = stage === "fill_more" ? "fill_more" : "open_and_fill_basic";
 					let filled = 0;
 					const filledLabels = [];
+					const backgroundFilledLabels = [];
 					let blockedLinkHints = [];
 					const mergeFillStats = (result) => {
 						const inc = Number(result?.filled || 0);
 						if (inc > 0) filled += inc;
 						for (const label of Array.isArray(result?.filledLabels) ? result.filledLabels : []) {
 							if (label && !filledLabels.includes(label)) filledLabels.push(label);
+						}
+						for (const label of Array.isArray(result?.backgroundFilledLabels) ? result.backgroundFilledLabels : []) {
+							if (label && !backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
 						}
 						const blocked = Array.isArray(result?.blockedLinkHints) ? result.blockedLinkHints : [];
 						blockedLinkHints = [...new Set([...blockedLinkHints, ...blocked])];
@@ -1351,6 +1395,11 @@
 							duration_ms: 220,
 						});
 					}
+					if (backgroundFilledLabels.length) {
+						this.emitProgress(
+							`ℹ️ UI tasdiqlanmagan (fon fallback) maydonlar: ${backgroundFilledLabels.join(", ")}. Ular asosiy countga qo'shilmadi.`
+						);
+					}
 					if (missingRequiredLabels.length) {
 						this.emitProgress(
 							`⚠️ Majburiy maydonlar hali to'lmadi: ${missingRequiredLabels.join(", ")}. Jarayon to'liq tugamadi.`
@@ -1358,33 +1407,45 @@
 						if (blockedLinkHints.length) {
 							this.emitProgress(`🧩 Bog'liq master yozuvlar kerak: ${blockedLinkHints.join(", ")}.`);
 						}
-						return {
-							ok: true,
-							reached_target: true,
-							message:
-								filled > 0
-									? `${filled} ta maydonni to'ldirdim (${filledLabels.join(
-											", "
-										)}), lekin dars tugamadi. Majburiy maydonlar qolgan: ${missingRequiredLabels.join(", ")}.`
-									: `Forma ochildi, lekin majburiy maydonlar hali bo'sh: ${missingRequiredLabels.join(
-											", "
-										)}. Avval shu maydonlarni to'ldiramiz.`,
-						};
-					}
+							return {
+								ok: true,
+								reached_target: true,
+								message:
+									filled > 0
+										? `${filled} ta maydonni to'ldirdim (${filledLabels.join(
+												", "
+											)}), lekin dars tugamadi. Majburiy maydonlar qolgan: ${missingRequiredLabels.join(", ")}.${
+												backgroundFilledLabels.length
+													? ` UI tasdiqlanmagan maydonlar: ${backgroundFilledLabels.join(", ")}.`
+													: ""
+											}`
+										: `Forma ochildi, lekin majburiy maydonlar hali bo'sh: ${missingRequiredLabels.join(
+												", "
+											)}. Avval shu maydonlarni to'ldiramiz.`,
+							};
+						}
 					this.emitProgress(
 						filled > 0
 							? `🎯 To'ldirilgan maydonlar: ${filledLabels.join(", ")}. Endi keyingi bosqichga o'tish mumkin.`
 							: "⚠️ To'ldirishga mos maydon topilmadi."
 					);
-					return {
-						ok: true,
-						reached_target: true,
-						message:
-							filled > 0
-								? `${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}. Keyingi bosqichni aytsangiz davom etaman.`
-								: "Forma ochildi, lekin avtomatik to'ldirishga mos maydon topilmadi. Qaysi maydondan boshlaymiz?",
-					};
-				}
+						return {
+							ok: true,
+							reached_target: true,
+							message:
+								filled > 0
+									? `${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}.${
+											backgroundFilledLabels.length
+												? ` UI tasdiqlanmagan maydonlar hisobga olinmadi: ${backgroundFilledLabels.join(", ")}.`
+												: ""
+										} Keyingi bosqichni aytsangiz davom etaman.`
+									: backgroundFilledLabels.length
+										? `UIda tasdiqlangan to'ldirish bo'lmadi. Fon fallback bilan qiymat berilgan maydonlar: ${backgroundFilledLabels.join(
+												", "
+											)}. Endi ularni birga tekshiramiz.`
+										: "Forma ochildi, lekin avtomatik to'ldirishga mos maydon topilmadi. Qaysi maydondan boshlaymiz?",
+						};
+					}
 
 		getSearchQuery(guide, step) {
 			const stepLabel = String(step?.label || "").trim();
