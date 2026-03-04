@@ -51,6 +51,7 @@
 				this._runOptions = {};
 				this._lastProgressText = "";
 				this._lastProgressAt = 0;
+				this._progressStepNo = 0;
 					this.hotspotX = 13;
 					this.hotspotY = 8;
 					this.cursorPosX = 16 + this.hotspotX;
@@ -66,6 +67,29 @@
 				this._runOptions = opts && typeof opts === "object" ? opts : {};
 			}
 
+			stripProgressPrefix(text) {
+				return String(text || "")
+					.replace(/^\s*step\s*\d+\s*[:.)-]\s*/i, "")
+					.replace(/^\s*\d+\s*[-.)]?\s*qadam\s*[:.)-]\s*/i, "")
+					.trim();
+			}
+
+			formatProgressForChat(rawText) {
+				const cleanText = this.stripProgressPrefix(rawText);
+				if (!cleanText) return "";
+				const showStepLabel = this._runOptions?.step_labels !== false;
+				if (!showStepLabel) return cleanText;
+				const nextNo = Number(this._progressStepNo || 0) + 1;
+				this._progressStepNo = nextNo;
+				let formatted = `Step ${nextNo}: ${cleanText}`;
+				const isButtonClick = /\btugmasini\s+bos/i.test(cleanText);
+				const hasReason = /\buchun\b/i.test(cleanText);
+				if (isButtonClick && !hasReason) {
+					formatted += " Bu bosish keyingi bosqichga o'tish uchun.";
+				}
+				return formatted;
+			}
+
 				emitProgress(message) {
 					const text = String(message || "").trim();
 					if (!text) return;
@@ -75,12 +99,18 @@
 				this._lastProgressAt = now;
 				const cb = this._runOptions?.onProgress;
 				if (typeof cb !== "function") return;
+				const chatText = this.formatProgressForChat(text);
+				if (!chatText) return;
 					try {
-						cb(text);
+						cb(chatText);
 					} catch {
 						// ignore progress callback errors
 					}
-					this.traceTutorialEvent("progress", { text });
+					this.traceTutorialEvent("progress", {
+						text: chatText,
+						raw_text: text,
+						step_no: Number(this._progressStepNo || 0),
+					});
 				}
 
 				sanitizeTraceValue(value, depth = 0) {
@@ -718,14 +748,16 @@
 
 			for (let i = 0; i < pathLabels.length; i += 1) {
 				const label = pathLabels[i];
-				const stepNo = i + 1;
 				const isLast = i === pathLabels.length - 1;
+				const why = isLast
+					? "kerakli sahifani ochish uchun."
+					: "keyingi bo'limga o'tish uchun.";
 				steps.push({
 					type: "focus",
 					label,
 					scope: i === 0 ? "sidebar" : "content",
 					section_label: i > 0 ? moduleLabel : "",
-					message: `${stepNo}-qadam: "${label}" tugmasini bosamiz.`,
+					message: `"${label}" tugmasini bosamiz, ${why}`,
 					click: true,
 					strict_label: true,
 					route: isLast ? String(guide.route || "").trim() : "",
@@ -3209,6 +3241,7 @@
 				}
 				this.stop();
 				this.setRunOptions(runOptions);
+				this._progressStepNo = 0;
 				this.running = true;
 				this.createLayer();
 				let result = {

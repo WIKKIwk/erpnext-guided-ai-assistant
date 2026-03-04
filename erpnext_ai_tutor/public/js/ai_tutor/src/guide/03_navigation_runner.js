@@ -12,6 +12,7 @@
 				}
 				this.stop();
 				this.setRunOptions(runOptions);
+				this._progressStepNo = 0;
 				this.running = true;
 				this.createLayer();
 				let result = {

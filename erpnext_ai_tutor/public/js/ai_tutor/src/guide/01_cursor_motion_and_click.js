@@ -60,14 +60,16 @@
 
 			for (let i = 0; i < pathLabels.length; i += 1) {
 				const label = pathLabels[i];
-				const stepNo = i + 1;
 				const isLast = i === pathLabels.length - 1;
+				const why = isLast
+					? "kerakli sahifani ochish uchun."
+					: "keyingi bo'limga o'tish uchun.";
 				steps.push({
 					type: "focus",
 					label,
 					scope: i === 0 ? "sidebar" : "content",
 					section_label: i > 0 ? moduleLabel : "",
-					message: `${stepNo}-qadam: "${label}" tugmasini bosamiz.`,
+					message: `"${label}" tugmasini bosamiz, ${why}`,
 					click: true,
 					strict_label: true,
 					route: isLast ? String(guide.route || "").trim() : "",
