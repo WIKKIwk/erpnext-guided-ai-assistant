@@ -13,13 +13,44 @@
 
 					const grid = frm.fields_dict?.items?.grid;
 					if (!grid) return { filled: 0, filledLabels: [], blockedLinkHints: [] };
-					const childFields = Array.isArray(grid.docfields) ? grid.docfields : [];
-					const requiredChildFields = childFields.filter((df) => {
+					const childDoctype = String(itemsDf?.options || grid?.df?.options || "").trim();
+					let childFields = Array.isArray(grid.docfields) ? grid.docfields : [];
+					if (!childFields.length && childDoctype && typeof frappe?.get_meta === "function") {
+						try {
+							const childMeta = frappe.get_meta(childDoctype);
+							childFields = Array.isArray(childMeta?.fields) ? childMeta.fields : [];
+						} catch {
+							// ignore
+						}
+					}
+					let requiredChildFields = childFields.filter((df) => {
 						if (!df || !df.fieldname) return false;
 						if (!Boolean(df.reqd) || Boolean(df.read_only) || Boolean(df.hidden)) return false;
 						return !this.isStructFieldType(df.fieldtype);
 					});
-					if (!requiredChildFields.length) return { filled: 0, filledLabels: [], blockedLinkHints: [] };
+					if (!requiredChildFields.length) {
+						const fieldIndex = new Set(
+							(Array.isArray(childFields) ? childFields : [])
+								.map((df) => String(df?.fieldname || "").trim())
+								.filter(Boolean)
+						);
+						const fallbackFields = [
+							{ fieldname: "item_code", label: "Item Code", fieldtype: "Link", options: "Item", reqd: 1 },
+							{ fieldname: "qty", label: "Qty", fieldtype: "Float", options: "", reqd: 1 },
+							{ fieldname: "uom", label: "UOM", fieldtype: "Link", options: "UOM", reqd: 1 },
+						].filter((df) => !fieldIndex.size || fieldIndex.has(String(df.fieldname || "").trim()));
+						requiredChildFields = fallbackFields;
+						this.traceTutorialEvent("fill_required_items.meta_fallback", {
+							child_doctype: childDoctype,
+							fallback_fields: fallbackFields.map((x) => x.fieldname),
+						});
+					}
+					if (!requiredChildFields.length) {
+						this.traceTutorialEvent("fill_required_items.skip_no_required_fields", {
+							child_doctype: childDoctype,
+						});
+						return { filled: 0, filledLabels: [], blockedLinkHints: [] };
+					}
 
 					const blockedLinkHints = [];
 					const filledLabels = [];
@@ -33,7 +64,7 @@
 					}
 					if (!row) return { filled, filledLabels, blockedLinkHints };
 
-					for (const df of requiredChildFields) {
+						for (const df of requiredChildFields) {
 						if (!this.running) break;
 						const fieldtype = String(df.fieldtype || "").trim();
 
@@ -64,9 +95,48 @@
 								blockedLinkHints.push(`**${label}** (Link: ${linkDoctype})`);
 							}
 						}
-					}
+						}
 
-					frm.refresh_field("items");
+						// Hard fallback for BOM-like child rows:
+						// if dynamic metadata pass still leaves core fields empty, force-fill minimum viable row.
+						const rowHasField = (fieldname) =>
+							Boolean(row) && Object.prototype.hasOwnProperty.call(row, String(fieldname || "").trim());
+						if (this.running && rowHasField("item_code") && !String(row.item_code || "").trim()) {
+							const fallbackItemCode = await this.fetchLinkDemoValue("Item", "", {
+								create_if_missing: Boolean(this._allowDependencyCreation),
+								report_created: Boolean(this._allowDependencyCreation),
+							});
+							if (fallbackItemCode) {
+								const ok = await this.setStockRowValue(row, "item_code", fallbackItemCode, "Item Code");
+								if (ok) {
+									filled += 1;
+									if (!filledLabels.includes("Item Code")) filledLabels.push("Item Code");
+								}
+							} else {
+								blockedLinkHints.push("**Item Code** (Link: Item)");
+							}
+						}
+						if (this.running && rowHasField("qty") && !(Number(row.qty || 0) > 0)) {
+							const ok = await this.setStockRowValue(row, "qty", 1, "Qty");
+							if (ok) {
+								filled += 1;
+								if (!filledLabels.includes("Qty")) filledLabels.push("Qty");
+							}
+						}
+						if (this.running && rowHasField("uom") && !String(row.uom || "").trim()) {
+							const fallbackUomHint = String(row.stock_uom || row.item_uom || "Nos").trim();
+							const fallbackUom = (await this.fetchLinkDemoValue("UOM", fallbackUomHint, {
+								create_if_missing: Boolean(this._allowDependencyCreation),
+								report_created: Boolean(this._allowDependencyCreation),
+							})) || "Nos";
+							const ok = await this.setStockRowValue(row, "uom", fallbackUom, "UOM");
+							if (ok) {
+								filled += 1;
+								if (!filledLabels.includes("UOM")) filledLabels.push("UOM");
+							}
+						}
+
+						frm.refresh_field("items");
 					await this.sleep(120);
 					const result = {
 						filled,
