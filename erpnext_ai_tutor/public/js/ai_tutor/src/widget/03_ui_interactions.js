@@ -216,50 +216,42 @@
 			return hasNoRolesTitle || hasNoRolesText;
 		}
 
-		ensureGuideRunnerForCursorAction() {
-			if (this.guideRunner) return this.guideRunner;
-			const runnerCtor =
-				(typeof GuideRunner === "function" && GuideRunner) ||
-				(typeof window !== "undefined" && typeof window.GuideRunner === "function" && window.GuideRunner) ||
-				null;
-			if (!runnerCtor) return null;
-			try {
-				this.guideRunner = new runnerCtor({ widget: this });
-			} catch {
-				this.guideRunner = null;
-			}
-			return this.guideRunner;
-		}
-
 		async clickElementWithGuideCursor(el) {
-			if (!el || !this.isGuidedCursorEnabled()) return false;
-			if (this.guidedRunActive) return false;
-			const runner = this.ensureGuideRunnerForCursorAction();
-			if (!runner) return false;
-			if (runner.running) return false;
-			if (typeof runner.createLayer !== "function" || typeof runner.stop !== "function" || typeof runner.focusElement !== "function") {
-				return false;
-			}
+			if (!el || typeof el.getBoundingClientRect !== "function") return false;
+			const rect = el.getBoundingClientRect();
+			if (!rect || rect.width < 2 || rect.height < 2) return false;
+			const hotspotX = 13;
+			const hotspotY = 8;
+			const targetX = Math.min(window.innerWidth - 2, Math.max(2, rect.left + rect.width / 2));
+			const targetY = Math.min(window.innerHeight - 2, Math.max(2, rect.top + rect.height / 2));
+			let layer = null;
 			try {
-				runner.stop();
-				runner.running = true;
-				runner.createLayer();
-				const clicked = await runner.focusElement(el, "", {
-					click: true,
-					skip_scroll: true,
-					duration_ms: 300,
-					pre_click_pause_ms: 120,
-				});
-				await new Promise((resolve) => setTimeout(resolve, 80));
-				return Boolean(clicked);
+				layer = document.createElement("div");
+				layer.className = "erpnext-ai-tutor-guide-layer erpnext-ai-tutor-top-cursor-layer";
+				layer.style.zIndex = "2147483647";
+				const cursor = document.createElement("div");
+				cursor.className = "erpnext-ai-tutor-guide-cursor";
+				cursor.style.left = `${Math.max(0, 18 - hotspotX)}px`;
+				cursor.style.top = `${Math.max(0, 18 - hotspotY)}px`;
+				layer.appendChild(cursor);
+				document.body.appendChild(layer);
+				await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+				cursor.style.transitionDuration = "290ms";
+				cursor.style.left = `${Math.max(0, targetX - hotspotX)}px`;
+				cursor.style.top = `${Math.max(0, targetY - hotspotY)}px`;
+				await new Promise((resolve) => setTimeout(resolve, 310));
+				cursor.classList.remove("is-click");
+				void cursor.offsetWidth;
+				cursor.classList.add("is-click");
+				if (typeof el.click === "function") {
+					el.click();
+				}
+				await new Promise((resolve) => setTimeout(resolve, 120));
+				return true;
 			} catch {
 				return false;
 			} finally {
-				try {
-					runner.stop();
-				} catch {
-					// ignore
-				}
+				if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
 			}
 		}
 

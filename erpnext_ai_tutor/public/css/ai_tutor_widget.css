@@ -668,6 +668,10 @@
 	z-index: 2147483000;
 }
 
+.erpnext-ai-tutor-top-cursor-layer {
+	z-index: 2147483647 !important;
+}
+
 .erpnext-ai-tutor-guide-cursor {
 	position: fixed;
 	width: 46px;
