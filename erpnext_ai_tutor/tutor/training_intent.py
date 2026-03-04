@@ -9,6 +9,8 @@ from erpnext_ai_tutor.tutor.navigation import build_navigation_plan
 from erpnext_ai_tutor.tutor.training_patterns import AI_TARGET_ALIASES, ALLOWED_INTENT_ACTIONS
 from erpnext_ai_tutor.tutor.training_targets import _doctype_from_slug, _is_real_doctype
 
+INTENT_MAX_TOKENS = 2048
+
 
 def _extract_json_payload(text: str) -> Any:
 	raw = str(text or "").strip()
@@ -33,6 +35,29 @@ def _extract_json_payload(text: str) -> Any:
 		except Exception:
 			return None
 	return None
+
+
+def _extract_partial_intent_payload(text: str) -> Dict[str, Any] | None:
+	raw = str(text or "").strip()
+	if not raw:
+		return None
+	action_match = re.search(r'"action"\s*:\s*"([^"]+)"', raw, flags=re.IGNORECASE)
+	if not action_match:
+		return None
+	action = str(action_match.group(1) or "").strip().lower()
+	doctype_match = re.search(r'"doctype"\s*:\s*"([^"]*)"', raw, flags=re.IGNORECASE)
+	conf_match = re.search(r'"confidence"\s*:\s*([0-9]*\.?[0-9]+)', raw, flags=re.IGNORECASE)
+	dep_match = re.search(r'"allow_dependency_creation"\s*:\s*(true|false)', raw, flags=re.IGNORECASE)
+	try:
+		confidence = float(conf_match.group(1)) if conf_match else 0.4
+	except Exception:
+		confidence = 0.4
+	return {
+		"action": action,
+		"doctype": str(doctype_match.group(1) or "").strip() if doctype_match else "",
+		"confidence": confidence,
+		"allow_dependency_creation": bool(dep_match and str(dep_match.group(1) or "").lower() == "true"),
+	}
 
 
 def _coerce_to_real_doctype(candidate: str) -> str:
@@ -84,7 +109,7 @@ def _infer_doctype_with_ai(user_message: str) -> str:
 				{"role": "system", "content": system_msg},
 				{"role": "user", "content": text},
 			],
-			max_tokens=220,
+			max_tokens=INTENT_MAX_TOKENS,
 		)
 	except Exception:
 		return ""
@@ -137,12 +162,14 @@ def _infer_training_intent_with_ai(user_message: str, *, has_active_tutorial: bo
 				{"role": "system", "content": system_msg},
 				{"role": "user", "content": json.dumps(user_payload, ensure_ascii=True)},
 			],
-			max_tokens=220,
+			max_tokens=INTENT_MAX_TOKENS,
 		)
 	except Exception:
 		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
 
 	payload = _extract_json_payload(resp)
+	if not isinstance(payload, dict):
+		payload = _extract_partial_intent_payload(resp)
 	if not isinstance(payload, dict):
 		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
 
