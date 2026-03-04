@@ -265,6 +265,67 @@ def _append_tutorial_log_line(line: str) -> None:
 			continue
 
 
+def _append_chat_diag_log_line(line: str) -> None:
+	text = str(line or "").strip()
+	if not text:
+		return
+	paths = [Path(frappe.get_site_path("logs", "erpnext_ai_tutor_chat_diag.log"))]
+	try:
+		bench_path = Path(frappe.get_bench_path()) / "logs" / "erpnext_ai_tutor_chat_diag.log"
+		paths.append(bench_path)
+	except Exception:
+		pass
+	for path in paths:
+		try:
+			path.parent.mkdir(parents=True, exist_ok=True)
+			with path.open("a", encoding="utf-8") as handle:
+				handle.write(text + "\n")
+		except Exception:
+			continue
+
+
+def _log_chat_diagnostic(
+	*,
+	phase: str,
+	user_message: str,
+	ctx: Dict[str, Any] | None,
+	response_payload: Dict[str, Any] | None,
+	lang: str,
+	advanced_mode: bool,
+) -> None:
+	try:
+		payload = response_payload if isinstance(response_payload, dict) else {}
+		guide = payload.get("guide") if isinstance(payload.get("guide"), dict) else {}
+		tutorial = guide.get("tutorial") if isinstance(guide.get("tutorial"), dict) else {}
+		context = ctx if isinstance(ctx, dict) else {}
+		entry = {
+			"phase": str(phase or "").strip(),
+			"logged_at": frappe.utils.now(),
+			"user": str(frappe.session.user or "Guest").strip(),
+			"site": str(frappe.local.site or "").strip(),
+			"lang": str(lang or "").strip(),
+			"advanced_mode": bool(advanced_mode),
+			"message": str(user_message or "").strip()[:220],
+			"context_route": str(context.get("route_str") or "").strip(),
+			"has_tutor_state": isinstance(context.get("tutor_state"), dict),
+			"ok": bool(payload.get("ok")) if "ok" in payload else None,
+			"has_guide": bool(guide),
+			"guide_route": str(guide.get("route") or "").strip(),
+			"guide_target": str(guide.get("target_label") or "").strip(),
+			"tutorial_mode": str(tutorial.get("mode") or "").strip(),
+			"tutorial_stage": str(tutorial.get("stage") or "").strip(),
+			"auto_guide": bool(payload.get("auto_guide")) if "auto_guide" in payload else False,
+		}
+		line = json.dumps(entry, ensure_ascii=False)
+		_append_chat_diag_log_line(line)
+		try:
+			frappe.logger("erpnext_ai_tutor_chat_diag", allow_site=True, file_count=20).info(line)
+		except Exception:
+			pass
+	except Exception:
+		pass
+
+
 def _sanitize_demo_token(value: str, *, max_len: int = 16) -> str:
 	text = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "").strip()).strip("-")
 	if not text:
@@ -417,6 +478,14 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 		advanced_mode=advanced_mode,
 	)
 	if training_flow:
+		_log_chat_diagnostic(
+			phase="training_flow",
+			user_message=user_message,
+			ctx=ctx,
+			response_payload=training_flow if isinstance(training_flow, dict) else {},
+			lang=lang,
+			advanced_mode=advanced_mode,
+		)
 		return training_flow
 
 	nav_plan: Dict[str, Any] = {}
@@ -690,4 +759,13 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 		if nav_plan:
 			guide = _guide_from_nav_plan(nav_plan)
 
-	return {"ok": True, "reply": reply or "", "guide": guide}
+	result_payload = {"ok": True, "reply": reply or "", "guide": guide}
+	_log_chat_diagnostic(
+		phase="llm_flow",
+		user_message=user_message,
+		ctx=ctx,
+		response_payload=result_payload,
+		lang=lang,
+		advanced_mode=advanced_mode,
+	)
+	return result_payload
