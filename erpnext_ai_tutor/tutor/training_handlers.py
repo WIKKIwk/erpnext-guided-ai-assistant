@@ -15,6 +15,17 @@ from erpnext_ai_tutor.tutor.training_steps import (
 from erpnext_ai_tutor.tutor.training_targets import _doctype_to_slug
 
 
+def _pending_target_clarify_response(lang: str) -> Dict[str, Any]:
+	return _build_training_reply(
+		reply=_target_clarify_reply(lang),
+		tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
+	)
+
+
+def _pending_action_clarify_response(lang: str) -> Dict[str, Any]:
+	return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
+
+
 def _handle_pending_action(
 	*,
 	lang: str,
@@ -45,12 +56,9 @@ def _handle_pending_action(
 				menu_path=target.get("menu_path") or [],
 				stock_entry_type_preference=pick_stock_entry_type(doctype),
 			)
-		return _build_training_reply(
-			reply=_target_clarify_reply(lang),
-			tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
-		)
+		return _pending_target_clarify_response(lang)
 
-	return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
+	return _pending_action_clarify_response(lang)
 
 
 def _handle_pending_target(
@@ -65,10 +73,7 @@ def _handle_pending_target(
 	if not target and create_requested:
 		target = resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
 	if not target:
-		return _build_training_reply(
-			reply=_target_clarify_reply(lang),
-			tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
-		)
+		return _pending_target_clarify_response(lang)
 
 	doctype = str(target.get("doctype") or "").strip()
 	return _build_start_step_response(
@@ -139,10 +144,7 @@ def _handle_create_or_intent(
 
 	target = resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
 	if not target:
-		return _build_training_reply(
-			reply=_target_clarify_reply(lang),
-			tutor_state={"pending": "target", "action": "create_record", "stage": "open_and_fill_basic"},
-		)
+		return _pending_target_clarify_response(lang)
 
 	doctype = str(target.get("doctype") or "").strip()
 	return _build_start_step_response(
