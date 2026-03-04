@@ -137,21 +137,6 @@
 					const backgroundFilledLabels = [];
 					const backgroundFilledEntries = [];
 					let blockedLinkHints = [];
-					const describeBackgroundEntries = (entries) => {
-						const rows = [];
-						for (const row of Array.isArray(entries) ? entries : []) {
-							const label = String(row?.label || "").trim();
-							if (!label) continue;
-							const value = String(row?.value === null || row?.value === undefined ? "" : row.value).trim();
-							if (value) {
-								rows.push(`${label}=\`${value}\``);
-							} else {
-								rows.push(label);
-							}
-						}
-						if (!rows.length) return "";
-						return rows.slice(0, 8).join(", ");
-					};
 					const mergeFillStats = (result) => {
 						const inc = Number(result?.filled || 0);
 						if (inc > 0) filled += inc;
@@ -249,15 +234,11 @@
 						});
 					}
 						if (backgroundFilledLabels.length) {
-							const details = describeBackgroundEntries(backgroundFilledEntries);
 							this.emitProgress(
-								details
-									? `ℹ️ Keyingi amaliy bosqichda birga tasdiqlanadigan maydonlar: ${details}.`
-									: `ℹ️ Keyingi amaliy bosqichda birga tasdiqlanadigan maydonlar: ${backgroundFilledLabels.join(", ")}.`
+								`ℹ️ Qo'shimcha maydonlar tayyorlandi (${backgroundFilledLabels.length} ta). Xohlasangiz keyingi bosqichda birga ko'ramiz.`
 							);
 						}
 							if (missingRequiredLabels.length) {
-							const details = describeBackgroundEntries(backgroundFilledEntries);
 							this.emitProgress(
 								`⚠️ Majburiy maydonlar hali to'lmadi: ${missingRequiredLabels.join(", ")}. Jarayon to'liq tugamadi.`
 							);
@@ -273,11 +254,9 @@
 										reached_target: true,
 										message:
 										filled > 0
-												? `UI tasdiqlagan ${filled} ta maydon to'ldirildi (${filledLabels.join(
-														", "
-													)}), lekin dars tugamadi. Majburiy maydonlar qolgan: ${missingRequiredLabels.join(", ")}.${
+												? `Asosiy amaliy qadamlar bajarildi, lekin dars tugamadi. Majburiy maydonlar qolgan: ${missingRequiredLabels.join(", ")}.${
 														backgroundFilledLabels.length
-															? ` Keyingi amaliy bosqichda tasdiqlanadigan maydonlar: ${details || backgroundFilledLabels.join(", ")}.`
+															? ` Qo'shimcha tayyorlangan maydonlar: ${backgroundFilledLabels.length} ta.`
 															: ""
 													}${enableAutoCreateHint}`
 											: `Forma ochildi, lekin majburiy maydonlar hali bo'sh: ${missingRequiredLabels.join(
@@ -292,7 +271,7 @@
 								}
 						this.emitProgress(
 							filled > 0
-								? `🎯 UI tasdiqlagan maydonlar: ${filledLabels.join(", ")}. Endi keyingi bosqichga o'tish mumkin.`
+								? "✅ Asosiy amaliy maydonlar to'ldirildi. Endi keyingi bosqichga o'tish mumkin."
 								: "⚠️ To'ldirishga mos maydon topilmadi."
 						);
 							return await finish({
@@ -300,13 +279,13 @@
 								reached_target: true,
 								message:
 									filled > 0
-										? `UI tasdiqlagan ${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}.${
+										? `Asosiy amaliy maydonlar to'ldirildi.${
 												backgroundFilledLabels.length
-													? ` Endi navbatdagi amaliy maydonlar: ${describeBackgroundEntries(backgroundFilledEntries) || backgroundFilledLabels.join(", ")}.`
+													? ` Qo'shimcha tayyorlangan maydonlar: ${backgroundFilledLabels.length} ta.`
 													: ""
 											} Keyingi bosqichni aytsangiz davom etaman.`
 									: backgroundFilledLabels.length
-											? `UIda tasdiqlangan to'ldirish bo'lmadi. Fon fallback bilan qiymat berilgan maydonlar: ${describeBackgroundEntries(backgroundFilledEntries) || backgroundFilledLabels.join(", ")}. Endi ularni birga tekshiramiz.`
+											? `UIda tasdiqlangan to'ldirish bo'lmadi. Fon fallback bilan ${backgroundFilledLabels.length} ta maydon tayyorlandi, endi ularni birga tekshiramiz.`
 											: "Forma ochildi, lekin avtomatik to'ldirishga mos maydon topilmadi. Qaysi maydondan boshlaymiz?",
 							}, "tutorial_step_done", {
 								doctype,
