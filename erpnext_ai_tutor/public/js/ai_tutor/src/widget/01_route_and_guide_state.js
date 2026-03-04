@@ -257,7 +257,28 @@
 		}
 
 		async runGuidedCursor(guide, opts = { auto: false, triggerEl: null, messageTs: 0 }) {
-			if (!guide || !this.isGuidedCursorEnabled() || !this.guideRunner) return;
+			if (!guide || !this.isGuidedCursorEnabled()) return;
+			if (!this.guideRunner) {
+				const runnerCtor =
+					(typeof GuideRunner === "function" && GuideRunner) ||
+					(typeof window !== "undefined" && typeof window.GuideRunner === "function" && window.GuideRunner) ||
+					null;
+				if (runnerCtor) {
+					try {
+						this.guideRunner = new runnerCtor({ widget: this });
+					} catch {
+						this.guideRunner = null;
+					}
+				}
+			}
+			if (!this.guideRunner) {
+				this.append(
+					"assistant",
+					"Kursor moduli yuklanmadi. Sahifani yangilab qayta urinib ko'ring.",
+					{ route_key: this.routeKey || this.getRouteKey() }
+				);
+				return;
+			}
 			const triggerEl = opts?.triggerEl || null;
 				const messageTs = this.normalizeMessageTs(opts?.messageTs);
 				this.setGuideButtonBusy(triggerEl, true);
