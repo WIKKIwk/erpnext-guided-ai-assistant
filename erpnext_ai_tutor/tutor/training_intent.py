@@ -108,19 +108,22 @@ def _infer_doctype_with_ai(user_message: str) -> str:
 def _infer_training_intent_with_ai(user_message: str, *, has_active_tutorial: bool) -> Dict[str, Any]:
 	text = str(user_message or "").strip()
 	if not text:
-		return {"action": "other", "doctype": "", "confidence": 0.0}
+		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
 
 	system_msg = (
 		"You classify ERPNext tutor chat intent.\n"
 		"Return strict JSON only with this schema:\n"
-		"{\"action\":\"create_record|continue|show_save|other\",\"doctype\":\"<DocType or empty>\",\"confidence\":0.0}\n"
+		"{\"action\":\"create_record|continue|show_save|manage_roles|other\",\"doctype\":\"<DocType or empty>\",\"confidence\":0.0,\"allow_dependency_creation\":false}\n"
 		"Rules:\n"
 		"- Use semantic intent, not just keywords.\n"
 		"- action=create_record when user asks practical teaching/demonstration/filling/new record workflow.\n"
 		"- action=continue when user asks to continue next step in an already running tutorial.\n"
 		"- action=show_save when user asks where save/submit is.\n"
+		"- action=manage_roles when user asks to add/assign/remove roles/permissions for an existing User.\n"
 		"- action=other for plain chat/small talk/non-tutorial questions.\n"
 		"- doctype must be canonical ERPNext DocType name if clear, else empty.\n"
+		"- For action=manage_roles, prefer doctype=User unless user clearly names another security doctype.\n"
+		"- allow_dependency_creation=true only if user explicitly allows auto-creating missing linked masters and continuing tutorial.\n"
 		"- If uncertain, confidence <= 0.4.\n"
 		"- No prose, no markdown."
 	)
@@ -137,11 +140,11 @@ def _infer_training_intent_with_ai(user_message: str, *, has_active_tutorial: bo
 			max_tokens=220,
 		)
 	except Exception:
-		return {"action": "other", "doctype": "", "confidence": 0.0}
+		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
 
 	payload = _extract_json_payload(resp)
 	if not isinstance(payload, dict):
-		return {"action": "other", "doctype": "", "confidence": 0.0}
+		return {"action": "other", "doctype": "", "confidence": 0.0, "allow_dependency_creation": False}
 
 	action = str(payload.get("action") or "").strip().lower()
 	if action not in ALLOWED_INTENT_ACTIONS:
@@ -151,7 +154,14 @@ def _infer_training_intent_with_ai(user_message: str, *, has_active_tutorial: bo
 	except Exception:
 		confidence = 0.0
 	doctype = _coerce_to_real_doctype(str(payload.get("doctype") or "").strip())
+	allow_dependency_creation = bool(payload.get("allow_dependency_creation"))
 	if confidence < 0.35:
 		action = "other"
 		doctype = ""
-	return {"action": action, "doctype": doctype, "confidence": confidence}
+		allow_dependency_creation = False
+	return {
+		"action": action,
+		"doctype": doctype,
+		"confidence": confidence,
+		"allow_dependency_creation": allow_dependency_creation,
+	}

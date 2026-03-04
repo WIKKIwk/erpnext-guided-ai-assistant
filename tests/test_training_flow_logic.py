@@ -36,6 +36,8 @@ if "erpnext_ai_tutor.tutor.training_resolution" not in sys.modules:
 
 from erpnext_ai_tutor.tutor.training_handlers import (  # noqa: E402
 	_handle_active_continue,
+	_handle_create_or_intent,
+	_handle_manage_roles_intent,
 	_handle_pending_action,
 	_handle_pending_target,
 )
@@ -188,6 +190,30 @@ class TrainingFlowLogicTests(unittest.TestCase):
 		):
 			result = _extract_doctype_mention_from_text("endi menga bom ochishni o'rgat")
 		self.assertEqual(result, "BOM")
+
+	def test_create_or_intent_does_not_start_when_create_not_requested(self):
+		result = _handle_create_or_intent(
+			lang="uz",
+			state_doctype="",
+			create_requested=False,
+			resolve_training_target=lambda **kwargs: {"doctype": "User", "route": "/app/user", "menu_path": ["Users", "User"]},
+			pick_stock_entry_type=lambda _doctype: "",
+		)
+		self.assertIsNone(result)
+
+	def test_manage_roles_intent_returns_navigation_guide_without_tutorial(self):
+		result = _handle_manage_roles_intent(
+			lang="uz",
+			manage_roles_requested=True,
+			state_doctype="",
+			context_doctype="",
+			intent_doctype="User",
+			resolve_training_target=lambda **kwargs: {"doctype": "User", "route": "/app/user", "menu_path": ["Users", "User"]},
+		)
+		self.assertEqual(result.get("guide", {}).get("route"), "/app/user")
+		self.assertEqual(result.get("guide", {}).get("target_label"), "User")
+		self.assertNotIn("tutorial", result.get("guide", {}))
+		self.assertEqual(result.get("tutor_state"), {})
 
 
 if __name__ == "__main__":

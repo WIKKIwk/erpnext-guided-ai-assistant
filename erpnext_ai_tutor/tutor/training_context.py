@@ -2,13 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from erpnext_ai_tutor.tutor.training_heuristics import _looks_like_practical_tutorial_request
 from erpnext_ai_tutor.tutor.training_intent import _infer_training_intent_with_ai
 from erpnext_ai_tutor.tutor.training_patterns import (
-	CONTINUE_ACTION_RE,
-	CREATE_ACTION_RE,
-	DEPENDENCY_CREATE_RE,
-	SHOW_SAVE_RE,
 	normalize_apostrophes as _normalize_apostrophes,
 )
 from erpnext_ai_tutor.tutor.training_state import _extract_state
@@ -33,16 +28,18 @@ def _build_training_context(user_message: str, ctx: Dict[str, Any]) -> Dict[str,
 	intent = _infer_training_intent_with_ai(text, has_active_tutorial=bool(state_action and state_doctype))
 	intent_action = str(intent.get("action") or "other").strip().lower()
 	intent_doctype = str(intent.get("doctype") or "").strip()
-	practical_tutorial_requested = _looks_like_practical_tutorial_request(text_rules)
-	create_requested = bool(CREATE_ACTION_RE.search(text_rules)) or practical_tutorial_requested or intent_action == "create_record"
-	continue_requested = bool(CONTINUE_ACTION_RE.search(text_rules)) or intent_action == "continue"
-	show_save_requested = bool(SHOW_SAVE_RE.search(text_rules)) or intent_action == "show_save"
-	dependency_create_requested = False
-	if state_action == "create_record" and not show_save_requested and (continue_requested or practical_tutorial_requested):
-		if DEPENDENCY_CREATE_RE.search(text_rules):
-			dependency_create_requested = True
-		elif state_allow_dependency_creation and continue_requested:
-			dependency_create_requested = True
+	intent_allow_dependency_creation = bool(intent.get("allow_dependency_creation"))
+	create_requested = intent_action == "create_record"
+	continue_requested = intent_action == "continue"
+	show_save_requested = intent_action == "show_save"
+	manage_roles_requested = intent_action == "manage_roles"
+	practical_tutorial_requested = intent_action in {"create_record", "continue"}
+	dependency_create_requested = bool(
+		state_action == "create_record"
+		and not show_save_requested
+		and (continue_requested or practical_tutorial_requested)
+		and (intent_allow_dependency_creation or (state_allow_dependency_creation and continue_requested))
+	)
 	explicit_mention_doctype = _extract_doctype_mention_from_text(text_rules)
 	explicit_target = _target_from_doctype(explicit_mention_doctype)
 	explicit_doctype = str(explicit_target.get("doctype") or "").strip()
@@ -67,6 +64,7 @@ def _build_training_context(user_message: str, ctx: Dict[str, Any]) -> Dict[str,
 		"create_requested": create_requested,
 		"continue_requested": continue_requested,
 		"show_save_requested": show_save_requested,
+		"manage_roles_requested": manage_roles_requested,
 		"dependency_create_requested": dependency_create_requested,
 		"explicit_target": explicit_target,
 		"explicit_doctype": explicit_doctype,

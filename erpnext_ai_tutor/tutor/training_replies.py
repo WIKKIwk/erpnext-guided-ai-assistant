@@ -68,3 +68,34 @@ def _continue_tutorial_reply(lang: str, doctype: str, stage: str) -> str:
 		ru=f"Хорошо, продолжаю следующий шаг по **{doctype}** и покажу заполнение дополнительных полей.",
 		en=f"Alright, I will continue the next **{doctype}** step and demonstrate filling additional fields.",
 	)
+
+
+def _manage_roles_reply(lang: str, doctype: str = "User") -> str:
+	if str(doctype or "").strip().lower() == "user":
+		return _msg(
+			lang,
+			uz=(
+				"Tushundim. Endi mavjud **User** uchun role qo'shishni amaliy ko'rsataman: "
+				"User kartasini ochamiz, `Roles & Permissions` bo'limiga o'tamiz va role qatorini qo'shamiz."
+			),
+			ru=(
+				"Понял. Сейчас покажу, как добавить роль существующему **User**: "
+				"откроем карточку пользователя, перейдём в `Roles & Permissions` и добавим строку роли."
+			),
+			en=(
+				"Understood. I will demonstrate adding a role to an existing **User**: "
+				"open the user card, go to `Roles & Permissions`, and add a role row."
+			),
+		)
+	return _msg(
+		lang,
+		uz=(
+			f"Tushundim. Endi **{doctype}** bo'limi orqali role/permission sozlash yo'lini amalda ko'rsataman."
+		),
+		ru=(
+			f"Понял. Сейчас покажу практический путь настройки ролей/прав через раздел **{doctype}**."
+		),
+		en=(
+			f"Understood. I will show the practical role/permission setup path through **{doctype}**."
+		),
+	)

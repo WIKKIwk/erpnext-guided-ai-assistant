@@ -3,12 +3,10 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Dict
 
-from erpnext_ai_tutor.tutor.training_heuristics import (
-	_needs_action_clarification,
-)
 from erpnext_ai_tutor.tutor.training_handlers import (
 	_handle_active_continue,
 	_handle_create_or_intent,
+	_handle_manage_roles_intent,
 	_handle_pending_action,
 	_handle_pending_target,
 )
@@ -16,12 +14,6 @@ from erpnext_ai_tutor.tutor.training_context import _build_training_context
 from erpnext_ai_tutor.tutor.training_runtime import (
 	_pick_stock_entry_type,
 	_resolve_training_target as _resolve_training_target_runtime,
-)
-from erpnext_ai_tutor.tutor.training_replies import (
-	_action_clarify_reply,
-)
-from erpnext_ai_tutor.tutor.training_state import (
-	_build_training_reply,
 )
 
 
@@ -51,6 +43,7 @@ def maybe_handle_training_flow(
 	create_requested = bool(training_ctx.get("create_requested"))
 	continue_requested = bool(training_ctx.get("continue_requested"))
 	show_save_requested = bool(training_ctx.get("show_save_requested"))
+	manage_roles_requested = bool(training_ctx.get("manage_roles_requested"))
 	dependency_create_requested = bool(training_ctx.get("dependency_create_requested"))
 	explicit_target = training_ctx.get("explicit_target") if isinstance(training_ctx.get("explicit_target"), dict) else {}
 	explicit_doctype = str(training_ctx.get("explicit_doctype") or "")
@@ -112,18 +105,25 @@ def maybe_handle_training_flow(
 	if continue_flow_reply is not None:
 		return continue_flow_reply
 
+	manage_roles_reply = _handle_manage_roles_intent(
+		lang=lang,
+		manage_roles_requested=manage_roles_requested,
+		state_doctype=state_doctype,
+		context_doctype=context_doctype,
+		intent_doctype=intent_doctype,
+		resolve_training_target=resolve_training_target,
+	)
+	if manage_roles_reply is not None:
+		return manage_roles_reply
+
 	create_or_intent_reply = _handle_create_or_intent(
 		lang=lang,
 		state_doctype=state_doctype,
 		create_requested=create_requested,
-		intent_doctype=intent_doctype,
 		resolve_training_target=resolve_training_target,
 		pick_stock_entry_type=pick_stock_entry_type,
 	)
 	if create_or_intent_reply is not None:
 		return create_or_intent_reply
-
-	if _needs_action_clarification(text_rules):
-		return _build_training_reply(reply=_action_clarify_reply(lang), tutor_state={"pending": "action"})
 
 	return None

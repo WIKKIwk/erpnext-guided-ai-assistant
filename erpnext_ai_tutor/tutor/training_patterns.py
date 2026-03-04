@@ -61,7 +61,7 @@ AI_TARGET_ALIASES = {
 	"bom": "BOM",
 	"bill of materials": "BOM",
 }
-ALLOWED_INTENT_ACTIONS = {"create_record", "continue", "show_save", "other"}
+ALLOWED_INTENT_ACTIONS = {"create_record", "continue", "show_save", "manage_roles", "other"}
 
 
 def normalize_apostrophes(value: str) -> str:

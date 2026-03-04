@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict
 
 from erpnext_ai_tutor.tutor.training_replies import (
 	_action_clarify_reply,
+	_manage_roles_reply,
 	_target_clarify_reply,
 )
 from erpnext_ai_tutor.tutor.training_resolution import _resolve_doctype_target
@@ -137,11 +138,10 @@ def _handle_create_or_intent(
 	lang: str,
 	state_doctype: str,
 	create_requested: bool,
-	intent_doctype: str,
 	resolve_training_target: Callable[..., Dict[str, Any]],
 	pick_stock_entry_type: Callable[[str], str],
 ) -> Dict[str, Any] | None:
-	if not (create_requested or intent_doctype):
+	if not create_requested:
 		return None
 
 	target = resolve_training_target(allow_context_fallback=True, fallback_doctype=state_doctype)
@@ -155,4 +155,34 @@ def _handle_create_or_intent(
 		route=str(target.get("route") or ""),
 		menu_path=target.get("menu_path") or [],
 		stock_entry_type_preference=pick_stock_entry_type(doctype),
+	)
+
+
+def _handle_manage_roles_intent(
+	*,
+	lang: str,
+	manage_roles_requested: bool,
+	state_doctype: str,
+	context_doctype: str,
+	intent_doctype: str,
+	resolve_training_target: Callable[..., Dict[str, Any]],
+) -> Dict[str, Any] | None:
+	if not manage_roles_requested:
+		return None
+
+	fallback_doctype = intent_doctype or context_doctype or state_doctype or "User"
+	target = resolve_training_target(allow_context_fallback=True, fallback_doctype=fallback_doctype)
+	doctype = str(target.get("doctype") or fallback_doctype or "User").strip() or "User"
+	route = str(target.get("route") or f"/app/{_doctype_to_slug(doctype)}").strip()
+	menu_path = target.get("menu_path") or [doctype]
+	return _build_training_reply(
+		reply=_manage_roles_reply(lang, doctype=doctype),
+		guide={
+			"type": "navigation",
+			"route": route,
+			"target_label": doctype,
+			"menu_path": menu_path,
+		},
+		# Switching from create tutorial to role-management should clear stale tutorial state.
+		tutor_state={},
 	)
