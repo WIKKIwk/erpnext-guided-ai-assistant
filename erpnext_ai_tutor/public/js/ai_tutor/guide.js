@@ -1817,12 +1817,12 @@
 						const input = this.findFieldInput(fieldname, { allowHidden: false });
 						if (!input) {
 							const modelOnlyOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
-							if (modelOnlyOk) {
-								if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
-								this.emitProgress(
-									`ℹ️ **${label}** uchun qiymat model fallback orqali berildi, lekin UI harakati bo'lmagani uchun asosiy countga qo'shmadim.`
-								);
-							} else {
+								if (modelOnlyOk) {
+									if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+									this.emitProgress(
+										`ℹ️ **${label}** qiymati tayyorlandi. Endi bu maydonni ekranda cursor bilan bosib, amalda birga tasdiqlaymiz.`
+									);
+								} else {
 								this.emitProgress(`⚠️ **${label}** maydoni UIda topilmadi va model orqali ham to'ldirib bo'lmadi.`);
 							}
 							continue;
@@ -1850,12 +1850,12 @@
 							);
 						} else {
 							const fallbackOk = await this.setDocFieldValue(fieldname, valueToType, label, { silent: true });
-							if (fallbackOk) {
-								if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
-								this.emitProgress(
-									`ℹ️ **${label}** model fallback bilan berildi, lekin UI tasdiqlamagani uchun asosiy countga qo'shmadim.`
-								);
-							} else {
+								if (fallbackOk) {
+									if (!backgroundFilledLabels.includes(label)) backgroundFilledLabels.push(label);
+									this.emitProgress(
+										`ℹ️ **${label}** qiymati tayyorlandi. Endi UI'da shu maydonni birga bosib tasdiqlaymiz.`
+									);
+								} else {
 								this.emitProgress(`⚠️ **${label}** qiymati form tomonidan qabul qilinmadi, qayta tekshirish kerak.`);
 							}
 						}
@@ -2383,11 +2383,11 @@
 							duration_ms: 220,
 						});
 					}
-					if (backgroundFilledLabels.length) {
-						this.emitProgress(
-							`ℹ️ UI tasdiqlanmagan (fon fallback) maydonlar: ${backgroundFilledLabels.join(", ")}. Ular asosiy countga qo'shilmadi.`
-						);
-					}
+						if (backgroundFilledLabels.length) {
+							this.emitProgress(
+								`ℹ️ Keyingi amaliy bosqichda birga tasdiqlanadigan maydonlar: ${backgroundFilledLabels.join(", ")}.`
+							);
+						}
 					if (missingRequiredLabels.length) {
 						this.emitProgress(
 							`⚠️ Majburiy maydonlar hali to'lmadi: ${missingRequiredLabels.join(", ")}. Jarayon to'liq tugamadi.`
@@ -2400,13 +2400,13 @@
 								reached_target: true,
 								message:
 									filled > 0
-										? `UI tasdiqlagan ${filled} ta maydon to'ldirildi (${filledLabels.join(
-												", "
-											)}), lekin dars tugamadi. Majburiy maydonlar qolgan: ${missingRequiredLabels.join(", ")}.${
-												backgroundFilledLabels.length
-													? ` UI tasdiqlanmagan maydonlar: ${backgroundFilledLabels.join(", ")}.`
-													: ""
-											}`
+											? `UI tasdiqlagan ${filled} ta maydon to'ldirildi (${filledLabels.join(
+													", "
+												)}), lekin dars tugamadi. Majburiy maydonlar qolgan: ${missingRequiredLabels.join(", ")}.${
+													backgroundFilledLabels.length
+														? ` Keyingi amaliy bosqichda tasdiqlanadigan maydonlar: ${backgroundFilledLabels.join(", ")}.`
+														: ""
+												}`
 										: `Forma ochildi, lekin majburiy maydonlar hali bo'sh: ${missingRequiredLabels.join(
 												", "
 											)}. Avval shu maydonlarni to'ldiramiz.`,
@@ -2421,12 +2421,12 @@
 							ok: true,
 							reached_target: true,
 							message:
-								filled > 0
-									? `UI tasdiqlagan ${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}.${
-											backgroundFilledLabels.length
-												? ` UI tasdiqlanmagan maydonlar hisobga olinmadi: ${backgroundFilledLabels.join(", ")}.`
-												: ""
-										} Keyingi bosqichni aytsangiz davom etaman.`
+									filled > 0
+										? `UI tasdiqlagan ${filled} ta maydonni demo tarzda to'ldirdim: ${filledLabels.join(", ")}.${
+												backgroundFilledLabels.length
+													? ` Endi navbatdagi amaliy maydonlar: ${backgroundFilledLabels.join(", ")}.`
+													: ""
+											} Keyingi bosqichni aytsangiz davom etaman.`
 									: backgroundFilledLabels.length
 										? `UIda tasdiqlangan to'ldirish bo'lmadi. Fon fallback bilan qiymat berilgan maydonlar: ${backgroundFilledLabels.join(
 												", "
