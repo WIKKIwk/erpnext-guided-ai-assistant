@@ -216,6 +216,44 @@
 			return hasNoRolesTitle || hasNoRolesText;
 		}
 
+		isUserPostSaveDialogText(rawText) {
+			const text = stripHtml(rawText || "").replace(/\s+/g, " ").trim().toLowerCase();
+			if (!text) return false;
+			if (text.includes("no roles specified") || text.includes("has no roles") || text.includes("no roles enabled")) {
+				return true;
+			}
+			if (text.includes("duplicate name") && text.includes("user")) {
+				return true;
+			}
+			if (text.includes("already exists") && text.includes("user")) {
+				return true;
+			}
+			return false;
+		}
+
+		isDialogElementVisible(el) {
+			if (!el) return false;
+			const rect = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect() : null;
+			if (!rect || rect.width < 2 || rect.height < 2) return false;
+			const style = window.getComputedStyle(el);
+			if (!style) return false;
+			return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+		}
+
+		findDialogCloseButton(dialog, closeSelectors) {
+			if (!dialog) return null;
+			for (const sel of closeSelectors) {
+				const btn = dialog.querySelector(sel);
+				if (btn && typeof btn.click === "function" && this.isDialogElementVisible(btn)) {
+					return btn;
+				}
+			}
+			const headerButtons = Array.from(dialog.querySelectorAll(".modal-header button, .modal-header [role='button'], .modal-header .close"))
+				.filter((el) => typeof el?.click === "function" && this.isDialogElementVisible(el))
+				.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+			return headerButtons[0] || null;
+		}
+
 		async clickElementWithGuideCursor(el) {
 			if (!el || typeof el.getBoundingClientRect !== "function") return false;
 			const rect = el.getBoundingClientRect();
@@ -263,46 +301,50 @@
 				".modal-header .close",
 				"button[aria-label='Close']",
 			];
-			const dialogs = Array.from(document.querySelectorAll(".msgprint-dialog, .modal.msgprint-dialog, .modal.show"))
+			const dialogs = Array.from(document.querySelectorAll(".msgprint-dialog, .modal.msgprint-dialog, .modal.show, .modal.in"))
 				.filter((el) => {
-					const text = stripHtml(el?.textContent || "").toLowerCase();
-					return text.includes("no roles specified") || text.includes("has no roles") || text.includes("no roles enabled");
+					if (!this.isDialogElementVisible(el)) return false;
+					return this.isUserPostSaveDialogText(el?.textContent || "");
 				})
 				.reverse();
 			for (const dialog of dialogs) {
-				for (const sel of closeSelectors) {
-					const btn = dialog.querySelector(sel);
-					if (btn && typeof btn.click === "function") {
-						const byCursor = await this.clickElementWithGuideCursor(btn);
-						if (!byCursor) btn.click();
-						await new Promise((resolve) => setTimeout(resolve, 80));
-						if (!this.isNoRolesDialogVisible()) return true;
-					}
-				}
+				const btn = this.findDialogCloseButton(dialog, closeSelectors);
+				if (!btn) continue;
+				const byCursor = await this.clickElementWithGuideCursor(btn);
+				if (!byCursor) btn.click();
+				await new Promise((resolve) => setTimeout(resolve, 90));
+				if (!this.isNoRolesDialogVisible()) return true;
+			}
+
+			const globalCloseButtons = Array.from(
+				document.querySelectorAll(
+					".modal.show .modal-header button, .modal.in .modal-header button, .msgprint-dialog .modal-header button, .modal.show .modal-header .close, .modal.in .modal-header .close"
+				)
+			)
+				.filter((el) => typeof el?.click === "function" && this.isDialogElementVisible(el))
+				.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+			for (const btn of globalCloseButtons) {
+				const byCursor = await this.clickElementWithGuideCursor(btn);
+				if (!byCursor) btn.click();
+				await new Promise((resolve) => setTimeout(resolve, 90));
+				if (!this.isNoRolesDialogVisible()) return true;
 			}
 			try {
 				const dialog = frappe?.msg_dialog;
 				const wrapper = dialog?.$wrapper?.[0] || dialog?.wrapper || null;
 				const jqVisible = Boolean(dialog?.$wrapper && typeof dialog.$wrapper.is === "function" && dialog.$wrapper.is(":visible"));
-				const domVisible = Boolean(
-					wrapper &&
-						(wrapper.classList?.contains("show") ||
-							window.getComputedStyle(wrapper).display !== "none" ||
-							window.getComputedStyle(wrapper).visibility !== "hidden")
-				);
+				const domVisible = Boolean(wrapper && this.isDialogElementVisible(wrapper));
 				const isVisible = jqVisible || domVisible;
 				if (isVisible && dialog && typeof dialog.cancel === "function") {
 					dialog.cancel();
 				}
 				if (wrapper) {
-					for (const sel of closeSelectors) {
-						const btn = wrapper.querySelector(sel);
-						if (btn && typeof btn.click === "function" && isVisible) {
-							const byCursor = await this.clickElementWithGuideCursor(btn);
-							if (!byCursor) btn.click();
-							await new Promise((resolve) => setTimeout(resolve, 80));
-							if (!this.isNoRolesDialogVisible()) return true;
-						}
+					const btn = isVisible ? this.findDialogCloseButton(wrapper, closeSelectors) : null;
+					if (btn) {
+						const byCursor = await this.clickElementWithGuideCursor(btn);
+						if (!byCursor) btn.click();
+						await new Promise((resolve) => setTimeout(resolve, 90));
+						if (!this.isNoRolesDialogVisible()) return true;
 					}
 				}
 				if (isVisible && dialog && typeof dialog.get_close_btn === "function") {
@@ -332,18 +374,15 @@
 		isNoRolesDialogVisible() {
 			const dialogs = Array.from(document.querySelectorAll(".msgprint-dialog, .modal.msgprint-dialog, .modal.show, .modal.in"));
 			const matched = dialogs.filter((el) => {
-				const text = stripHtml(el?.textContent || "").toLowerCase();
-				if (!text) return false;
-				const hasNoRoles = text.includes("no roles specified") || text.includes("has no roles") || text.includes("no roles enabled");
-				if (!hasNoRoles) return false;
-				const style = window.getComputedStyle(el);
-				return style && style.display !== "none" && style.visibility !== "hidden";
+				if (!this.isDialogElementVisible(el)) return false;
+				return this.isUserPostSaveDialogText(el?.textContent || "");
 			});
 			if (matched.length) return true;
 			try {
 				const dialog = frappe?.msg_dialog;
-				if (!dialog?.$wrapper || typeof dialog.$wrapper.is !== "function") return false;
-				return dialog.$wrapper.is(":visible");
+				const wrapper = dialog?.$wrapper?.[0] || dialog?.wrapper || null;
+				if (!wrapper || !this.isDialogElementVisible(wrapper)) return false;
+				return this.isUserPostSaveDialogText(wrapper.textContent || "");
 			} catch {
 				return false;
 			}
@@ -392,6 +431,7 @@
 				);
 			}
 			await this.navigateToUserListAfterNoRoles();
+			await this.closeNoRolesSpecifiedDialogWithRetry();
 			this.open();
 			return true;
 		}
