@@ -10,6 +10,7 @@ from erpnext_ai_tutor.tutor.training_patterns import AI_TARGET_ALIASES, ALLOWED_
 from erpnext_ai_tutor.tutor.training_targets import _doctype_from_slug, _is_real_doctype
 
 INTENT_MAX_TOKENS = 2048
+_FIELDNAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _ALLOWED_FIELD_UPDATES = {"email"}
 
