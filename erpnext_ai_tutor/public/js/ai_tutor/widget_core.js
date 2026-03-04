@@ -1753,16 +1753,28 @@
 			try {
 				const dialog = frappe?.msg_dialog;
 				const wrapper = dialog?.$wrapper?.[0] || dialog?.wrapper || null;
+				const jqVisible = Boolean(dialog?.$wrapper && typeof dialog.$wrapper.is === "function" && dialog.$wrapper.is(":visible"));
+				const domVisible = Boolean(
+					wrapper &&
+						(wrapper.classList?.contains("show") ||
+							window.getComputedStyle(wrapper).display !== "none" ||
+							window.getComputedStyle(wrapper).visibility !== "hidden")
+				);
+				const isVisible = jqVisible || domVisible;
 				if (wrapper) {
 					for (const sel of closeSelectors) {
 						const btn = wrapper.querySelector(sel);
-						if (btn && typeof btn.click === "function") {
+						if (btn && typeof btn.click === "function" && isVisible) {
 							btn.click();
 							return true;
 						}
 					}
 				}
-				if (dialog && typeof dialog.hide === "function") {
+				if (isVisible && typeof frappe?.hide_msgprint === "function") {
+					frappe.hide_msgprint(true);
+					return true;
+				}
+				if (isVisible && dialog && typeof dialog.hide === "function") {
 					dialog.hide();
 					return true;
 				}
