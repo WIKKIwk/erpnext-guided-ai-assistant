@@ -1,14 +1,3 @@
-			}
-			if (this.isAtRoute(guide.route)) return true;
-
-			// If the row exists but click handler didn't fire, confirm with Enter.
-			const entered = this.submitSearchByEnter(input);
-			if (entered) {
-				await this.waitFor(() => this.isAtRoute(guide.route), 3200, 110);
-			}
-			return this.isAtRoute(guide.route);
-		}
-
 		routeToPath(route) {
 			const cleaned = String(route || "").trim();
 			if (!cleaned) return "";
