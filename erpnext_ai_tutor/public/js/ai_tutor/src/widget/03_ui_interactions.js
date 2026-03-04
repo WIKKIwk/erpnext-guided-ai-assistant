@@ -176,9 +176,18 @@
 				indicator = first.indicator || first.color || "";
 			}
 
-			const severity = guessSeverity(indicator);
+			const normalized = {
+				title: stripHtml(title),
+				message: stripHtml(message),
+				source: "msgprint",
+			};
+			let severity = guessSeverity(indicator);
+			// Some Frappe warnings (e.g. "No Roles Specified") may not carry indicator.
+			if (!severity && this.isNoRolesSpecifiedEvent(normalized)) {
+				severity = "warning";
+			}
 			if (!severity) return;
-			this.handleEvent({ severity, title: stripHtml(title), message: stripHtml(message), source: "msgprint" });
+			this.handleEvent({ severity, ...normalized });
 		}
 
 		onAlert(args) {
@@ -199,7 +208,7 @@
 		}
 
 		isNoRolesSpecifiedEvent(ev) {
-			if (!ev || String(ev?.source || "").trim().toLowerCase() !== "msgprint") return false;
+			if (!ev) return false;
 			const title = stripHtml(ev?.title || "").replace(/\s+/g, " ").trim().toLowerCase();
 			const message = stripHtml(ev?.message || "").replace(/\s+/g, " ").trim().toLowerCase();
 			const hasNoRolesTitle = title.includes("no roles specified");
@@ -211,6 +220,8 @@
 			const selectors = [
 				".msgprint-dialog.modal.show .modal-header .btn-close",
 				".msgprint-dialog.show .modal-header .btn-close",
+				".msgprint-dialog.modal.show .modal-header .btn-modal-close",
+				".msgprint-dialog.show .modal-header .btn-modal-close",
 				".msgprint-dialog.modal.show [data-dismiss='modal']",
 				".msgprint-dialog.show [data-dismiss='modal']",
 				".msgprint-dialog.modal.show .modal-header .close",
@@ -235,13 +246,22 @@
 			return false;
 		}
 
+		async closeNoRolesSpecifiedDialogWithRetry() {
+			if (this.closeNoRolesSpecifiedDialog()) return true;
+			for (let i = 0; i < 6; i += 1) {
+				await new Promise((resolve) => setTimeout(resolve, 120));
+				if (this.closeNoRolesSpecifiedDialog()) return true;
+			}
+			return false;
+		}
+
 		async handleNoRolesSpecifiedEvent(ev) {
 			if (!this.isNoRolesSpecifiedEvent(ev)) return false;
 			const now = Date.now();
 			const lastAt = Number(this._lastNoRolesHandledAt || 0);
 			const isDuplicate = lastAt && now - lastAt < 6000;
 			this._lastNoRolesHandledAt = now;
-			this.closeNoRolesSpecifiedDialog();
+			await this.closeNoRolesSpecifiedDialogWithRetry();
 			if (!isDuplicate) {
 				this.append(
 					"assistant",
@@ -282,6 +302,7 @@
 		}
 
 		async handleEvent(ev) {
+			if (await this.handleNoRolesSpecifiedEvent(ev)) return;
 			if (!this.isAdvancedMode()) return;
 			if (this.guidedRunActive || this.guideRunner?.running) return;
 			const now = Date.now();
@@ -289,7 +310,6 @@
 				return;
 			}
 			this.lastEvent = { ...ev, at: Date.now() };
-			if (await this.handleNoRolesSpecifiedEvent(ev)) return;
 			const autoOpen =
 				(ev.severity === "error" && this.config?.auto_open_on_error) ||
 				(ev.severity === "warning" && this.config?.auto_open_on_warning);
