@@ -315,17 +315,27 @@
 					context: ctx,
 					history,
 				});
-				let replyText = "";
-				if (typeof r?.message?.reply === "string") replyText = r.message.reply;
-				else if (typeof r?.message?.message === "string") replyText = r.message.message;
-				else if (typeof r?.message === "string") replyText = r.message;
-				replyText = String(replyText ?? "").trim();
-				if (!replyText) {
-					throw new Error("EMPTY_REPLY");
-				}
-					this.applyTutorStateFromResponse(r?.message);
-					const guide = this.normalizeGuidePayload(r?.message?.guide);
-					const autoGuide = r?.message?.auto_guide === true;
+					const payload =
+						r && typeof r?.message === "object" && r.message
+							? r.message
+							: r && typeof r === "object"
+								? r
+								: null;
+					let replyText = "";
+					if (typeof payload?.reply === "string") replyText = payload.reply;
+					else if (typeof payload?.message === "string") replyText = payload.message;
+					else if (typeof r?.message === "string") replyText = r.message;
+					replyText = String(replyText ?? "").trim();
+					if (!replyText) {
+						throw new Error("EMPTY_REPLY");
+					}
+						this.applyTutorStateFromResponse(payload || r?.message);
+						const guide = this.normalizeGuidePayload(
+							payload?.guide || payload?.data?.guide || r?.guide || null
+						);
+						const autoGuide = Boolean(
+							payload?.auto_guide === true || payload?.data?.auto_guide === true || r?.auto_guide === true
+						);
 					this.hideTyping();
 					this.setMessageStatus(userEl, "sent");
 					await this.appendAssistantWithTypingEffect(replyText, { route_key: routeKey, guide });
