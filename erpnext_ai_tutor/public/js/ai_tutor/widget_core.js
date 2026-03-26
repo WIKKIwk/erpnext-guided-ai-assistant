@@ -2522,17 +2522,9 @@
 						const guide = this.normalizeGuidePayload(
 							payload?.guide || payload?.data?.guide || r?.guide || null
 						);
-						const autoGuide = Boolean(
-							payload?.auto_guide === true || payload?.data?.auto_guide === true || r?.auto_guide === true
-						);
 					this.hideTyping();
 					this.setMessageStatus(userEl, "sent");
 					await this.appendAssistantWithTypingEffect(replyText, { route_key: routeKey, guide });
-					if (guide && autoGuide && this.isGuidedCursorEnabled()) {
-						window.setTimeout(() => {
-							this.runGuidedCursor(guide, { auto: true });
-						}, 280);
-					}
 			} catch (e) {
 				this.hideTyping();
 				this.setMessageStatus(userEl, "failed");
