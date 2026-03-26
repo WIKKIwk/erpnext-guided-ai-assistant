@@ -42,7 +42,7 @@ if "erpnext_ai_tutor.tutor.training_resolution" not in sys.modules:
 	training_resolution_stub._resolve_doctype_target = _resolve_doctype_target_stub
 	sys.modules["erpnext_ai_tutor.tutor.training_resolution"] = training_resolution_stub
 
-from erpnext_ai_tutor.tutor.guide_offer import build_guide_offer  # noqa: E402
+from erpnext_ai_tutor.tutor.guide_offer import build_guide_offer, build_guide_offer_decision  # noqa: E402
 
 
 class GuideOfferLogicTests(unittest.TestCase):
@@ -171,6 +171,32 @@ class GuideOfferLogicTests(unittest.TestCase):
 			result = build_guide_offer("faqat tushuntirib ber, cursor siz", {})
 		self.assertIsNone(result)
 		infer_intent.assert_not_called()
+
+	def test_decision_payload_is_privacy_safe(self):
+		intent = {
+			"action": "create_record",
+			"doctype": "Item",
+			"confidence": 0.82,
+			"allow_dependency_creation": False,
+			"field_updates": [],
+		}
+		target = {"doctype": "Item", "route": "/app/item", "menu_path": ["Stock", "Item"]}
+		with (
+			patch(
+				"erpnext_ai_tutor.tutor.guide_offer._infer_training_intent_with_ai",
+				return_value=intent,
+			),
+			patch(
+				"erpnext_ai_tutor.tutor.guide_offer._resolve_doctype_target",
+				return_value=target,
+			),
+		):
+			result = build_guide_offer_decision("secret item qo'shishni o'rgat", {"route_str": "app/item"})
+		diagnostic = result.get("diagnostic") or {}
+		self.assertEqual(diagnostic.get("decision"), "offer_shown")
+		self.assertNotIn("message", diagnostic)
+		self.assertNotIn("user_message", diagnostic)
+		self.assertEqual(diagnostic.get("target_label"), "Item")
 
 
 if __name__ == "__main__":

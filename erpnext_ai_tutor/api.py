@@ -31,7 +31,7 @@ from erpnext_ai_tutor.tutor.context import (
 	shrink_doc,
 	which_field_reply,
 )
-from erpnext_ai_tutor.tutor.guide_offer import build_guide_offer
+from erpnext_ai_tutor.tutor.guide_offer import build_guide_offer_decision
 from erpnext_ai_tutor.tutor.guide_start import build_explicit_guide_start_reply
 from erpnext_ai_tutor.tutor.intents import (
 	WHAT_NEXT_RE,
@@ -311,6 +311,25 @@ def _append_chat_diag_log_line(line: str) -> None:
 			continue
 
 
+def _append_guide_offer_diag_log_line(line: str) -> None:
+	text = str(line or "").strip()
+	if not text:
+		return
+	paths = [Path(frappe.get_site_path("logs", "erpnext_ai_tutor_guide_offer_diag.log"))]
+	try:
+		bench_path = Path(frappe.get_bench_path()) / "logs" / "erpnext_ai_tutor_guide_offer_diag.log"
+		paths.append(bench_path)
+	except Exception:
+		pass
+	for path in paths:
+		try:
+			path.parent.mkdir(parents=True, exist_ok=True)
+			with path.open("a", encoding="utf-8") as handle:
+				handle.write(text + "\n")
+		except Exception:
+			continue
+
+
 def _log_chat_diagnostic(
 	*,
 	phase: str,
@@ -347,6 +366,47 @@ def _log_chat_diagnostic(
 		_append_chat_diag_log_line(line)
 		try:
 			frappe.logger("erpnext_ai_tutor_chat_diag", allow_site=True, file_count=20).info(line)
+		except Exception:
+			pass
+	except Exception:
+		pass
+
+
+def _log_guide_offer_diagnostic(
+	*, ctx: Dict[str, Any] | None, diagnostic: Dict[str, Any] | None, lang: str
+) -> None:
+	try:
+		context = ctx if isinstance(ctx, dict) else {}
+		diag = diagnostic if isinstance(diagnostic, dict) else {}
+		entry = {
+			"logged_at": frappe.utils.now(),
+			"user": str(frappe.session.user or "Guest").strip(),
+			"site": str(frappe.local.site or "").strip(),
+			"lang": str(lang or "").strip(),
+			"context_route": str(context.get("route_str") or "").strip()[:180],
+			"decision": str(diag.get("decision") or "").strip(),
+			"action": str(diag.get("action") or "").strip(),
+			"intent_doctype": str(diag.get("intent_doctype") or "").strip(),
+			"confidence": diag.get("confidence"),
+			"target_resolved": bool(diag.get("target_resolved")),
+			"target_label": str(diag.get("target_label") or "").strip(),
+			"route": str(diag.get("route") or "").strip(),
+			"mode": str(diag.get("mode") or "").strip(),
+			"reason": str(diag.get("reason") or "").strip(),
+			"context_match": bool(diag.get("context_match")),
+			"read_only_preference": bool(diag.get("read_only_preference")),
+			"context_doctype": str(diag.get("context_doctype") or "").strip(),
+			"has_form_context": bool(diag.get("has_form_context")),
+			"has_active_field": bool(diag.get("has_active_field")),
+			"has_event_context": bool(diag.get("has_event_context")),
+			"state_action": str(diag.get("state_action") or "").strip(),
+			"state_doctype": str(diag.get("state_doctype") or "").strip(),
+			"state_pending": str(diag.get("state_pending") or "").strip(),
+		}
+		line = json.dumps(entry, ensure_ascii=False)
+		_append_guide_offer_diag_log_line(line)
+		try:
+			frappe.logger("erpnext_ai_tutor_guide_offer_diag", allow_site=True, file_count=20).info(line)
 		except Exception:
 			pass
 	except Exception:
@@ -803,7 +863,14 @@ def chat(message: str, context: Any | None = None, history: Any | None = None) -
 
 	guide_offer: Dict[str, Any] | None = None
 	if advanced_mode and not guide and not troubleshoot and not is_auto:
-		guide_offer = build_guide_offer(user_message, ctx)
+		guide_offer_decision = build_guide_offer_decision(user_message, ctx)
+		if isinstance(guide_offer_decision, dict):
+			guide_offer = guide_offer_decision.get("guide_offer")
+			_log_guide_offer_diagnostic(
+				ctx=ctx,
+				diagnostic=guide_offer_decision.get("diagnostic"),
+				lang=lang,
+			)
 
 	result_payload = {"ok": True, "reply": reply or "", "guide": guide, "guide_offer": guide_offer}
 	_log_chat_diagnostic(

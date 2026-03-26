@@ -96,9 +96,13 @@ class ChatFlowLogicTests(unittest.TestCase):
 				"erpnext_ai_tutor.api.call_llm",
 				return_value="Item qo'shish jarayonini yozma ko'rsatib beraman.",
 			),
-			patch("erpnext_ai_tutor.api.build_guide_offer", return_value=guide_offer),
+			patch(
+				"erpnext_ai_tutor.api.build_guide_offer_decision",
+				return_value={"guide_offer": guide_offer, "diagnostic": {"decision": "offer_shown"}},
+			),
 			patch("erpnext_ai_tutor.api._get_current_user_role_context", return_value={}),
 			patch("erpnext_ai_tutor.api._log_chat_diagnostic", return_value=None),
+			patch("erpnext_ai_tutor.api._log_guide_offer_diagnostic", return_value=None),
 		):
 			result = chat(
 				"menga item qo'shishni o'rgat",
@@ -173,9 +177,16 @@ class ChatFlowLogicTests(unittest.TestCase):
 				"erpnext_ai_tutor.api.call_llm",
 				return_value="Mayli, faqat yozma tarzda tushuntiraman.",
 			),
-			patch("erpnext_ai_tutor.api.build_guide_offer", return_value=None),
+			patch(
+				"erpnext_ai_tutor.api.build_guide_offer_decision",
+				return_value={
+					"guide_offer": None,
+					"diagnostic": {"decision": "suppressed_read_only_preference"},
+				},
+			),
 			patch("erpnext_ai_tutor.api._get_current_user_role_context", return_value={}),
 			patch("erpnext_ai_tutor.api._log_chat_diagnostic", return_value=None),
+			patch("erpnext_ai_tutor.api._log_guide_offer_diagnostic", return_value=None),
 		):
 			result = chat(
 				"faqat tushuntirib ber, cursor siz",
@@ -220,9 +231,13 @@ class ChatFlowLogicTests(unittest.TestCase):
 				"erpnext_ai_tutor.api.call_llm",
 				return_value="Item qo'shish jarayonini yozma ko'rsatib beraman.",
 			),
-			patch("erpnext_ai_tutor.api.build_guide_offer", return_value=guide_offer),
+			patch(
+				"erpnext_ai_tutor.api.build_guide_offer_decision",
+				return_value={"guide_offer": guide_offer, "diagnostic": {"decision": "offer_shown"}},
+			),
 			patch("erpnext_ai_tutor.api._get_current_user_role_context", return_value={}),
 			patch("erpnext_ai_tutor.api._log_chat_diagnostic", return_value=None),
+			patch("erpnext_ai_tutor.api._log_guide_offer_diagnostic", return_value=None),
 		):
 			result = chat(
 				"menga item qo'shishni o'rgat",
@@ -266,9 +281,13 @@ class ChatFlowLogicTests(unittest.TestCase):
 				"erpnext_ai_tutor.api.call_llm",
 				return_value="Item qo'shishning yozma tartibini tushuntiraman.",
 			),
-			patch("erpnext_ai_tutor.api.build_guide_offer", return_value=guide_offer),
+			patch(
+				"erpnext_ai_tutor.api.build_guide_offer_decision",
+				return_value={"guide_offer": guide_offer, "diagnostic": {"decision": "offer_shown"}},
+			),
 			patch("erpnext_ai_tutor.api._get_current_user_role_context", return_value={}),
 			patch("erpnext_ai_tutor.api._log_chat_diagnostic", return_value=None),
+			patch("erpnext_ai_tutor.api._log_guide_offer_diagnostic", return_value=None),
 		):
 			result = chat(
 				"menga item qo'shishni o'rgat",
