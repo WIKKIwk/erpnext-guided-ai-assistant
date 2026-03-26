@@ -188,6 +188,52 @@ class ChatFlowLogicTests(unittest.TestCase):
 		self.assertEqual(result.get("guide"), {})
 		self.assertNotIn("tutor_state", result)
 
+	def test_guide_offer_response_does_not_request_auto_run(self):
+		cfg = SimpleNamespace(
+			enabled=True,
+			advanced_mode=True,
+			language="uz",
+			emoji_style="soft",
+			system_prompt="You are an ERPNext tutor assistant.",
+			include_form_context=False,
+			max_context_kb=24,
+			max_completion_tokens=0,
+		)
+		guide_offer = {
+			"show": True,
+			"confidence": 0.82,
+			"reason": "semantic_intent_resolved_target",
+			"target_label": "Item",
+			"route": "/app/item",
+			"menu_path": ["Stock", "Item"],
+			"mode": "create_record",
+		}
+		with (
+			patch("erpnext_ai_tutor.api.AITutorSettings.get_config", return_value=cfg),
+			patch("erpnext_ai_tutor.api.get_ai_provider_config", return_value={"language": "uz"}),
+			patch("erpnext_ai_tutor.api.maybe_handle_training_flow", return_value=None),
+			patch("erpnext_ai_tutor.api.is_auto_help", return_value=False),
+			patch("erpnext_ai_tutor.api.is_greeting_only", return_value=False),
+			patch("erpnext_ai_tutor.api.wants_troubleshooting", return_value=False),
+			patch("erpnext_ai_tutor.api.should_offer_navigation_guide", return_value=False),
+			patch(
+				"erpnext_ai_tutor.api.call_llm",
+				return_value="Item qo'shish jarayonini yozma ko'rsatib beraman.",
+			),
+			patch("erpnext_ai_tutor.api.build_guide_offer", return_value=guide_offer),
+			patch("erpnext_ai_tutor.api._get_current_user_role_context", return_value={}),
+			patch("erpnext_ai_tutor.api._log_chat_diagnostic", return_value=None),
+		):
+			result = chat(
+				"menga item qo'shishni o'rgat",
+				context={"ui": {"language": "uz"}},
+				history=[],
+			)
+		self.assertEqual(result.get("guide_offer"), guide_offer)
+		self.assertEqual(result.get("guide"), {})
+		self.assertNotIn("auto_guide", result)
+		self.assertNotIn("tutor_state", result)
+
 
 if __name__ == "__main__":
 	unittest.main()
