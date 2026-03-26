@@ -227,6 +227,43 @@ Rules:
 - Must not be used as a side effect of `guide_offer`.
 - Must track real guided progress, not UI speculation.
 
+Lifecycle invariants:
+
+- Creation:
+  - allowed only after a real guide-start action
+  - never allowed during plain explain-only `chat()`
+  - never allowed from `guide_offer` alone
+- Update:
+  - allowed only for an already-running guided session
+  - must reflect actual guided progress or pending clarification
+  - must not be used to remember speculative future offers
+- Clear/reset:
+  - allowed when the guided flow is completed, cancelled, or intentionally
+    switched away
+  - must happen when the system explicitly leaves guided mode
+
+Forbidden cases:
+
+- explain-only reply with non-null `tutor_state`
+- explain + offer response with non-null `tutor_state`
+- invalid or unresolved guide offer creating `tutor_state`
+- backend creating guided session state before the user clicks the button
+
+Minimal state creation example:
+
+```json
+{
+  "tutor_state": {
+    "action": "create_record",
+    "doctype": "Item",
+    "stage": "open_and_fill_basic",
+    "pending": ""
+  }
+}
+```
+
+This object is valid only after explicit guide start.
+
 ## Response Modes
 
 ### Mode A: Explain only
