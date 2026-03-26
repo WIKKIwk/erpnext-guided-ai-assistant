@@ -280,6 +280,45 @@ class TrainingFlowLogicTests(unittest.TestCase):
 		self.assertIsNone(result)
 		create_handler.assert_not_called()
 
+	def test_manage_roles_request_does_not_auto_start_guided_session_from_plain_chat(self):
+		training_ctx = {
+			"text_rules": "userga role qo'shishni o'rgat",
+			"pending": "",
+			"state_doctype": "",
+			"state_action": "",
+			"state_stock_type": "",
+			"context_doctype": "",
+			"intent_doctype": "User",
+			"create_requested": False,
+			"continue_requested": False,
+			"show_save_requested": False,
+			"manage_roles_requested": True,
+			"dependency_create_requested": False,
+			"explicit_target": {},
+			"explicit_doctype": "",
+			"practical_tutorial_requested": False,
+			"requested_stock_type": "",
+			"field_overrides": {},
+		}
+		with (
+			patch(
+				"erpnext_ai_tutor.tutor.training._build_training_context",
+				return_value=training_ctx,
+			),
+			patch(
+				"erpnext_ai_tutor.tutor.training._handle_manage_roles_intent",
+				return_value={"ok": True, "reply": "should not happen"},
+			) as manage_roles_handler,
+		):
+			result = maybe_handle_training_flow(
+				"userga role qo'shishni o'rgat",
+				{},
+				lang="uz",
+				advanced_mode=True,
+			)
+		self.assertIsNone(result)
+		manage_roles_handler.assert_not_called()
+
 
 if __name__ == "__main__":
 	unittest.main()

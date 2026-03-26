@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Dict
 
+from erpnext_ai_tutor.tutor.training_context import _build_training_context
 from erpnext_ai_tutor.tutor.training_handlers import (
 	_handle_active_continue,
 	_handle_create_or_intent,
@@ -10,9 +11,10 @@ from erpnext_ai_tutor.tutor.training_handlers import (
 	_handle_pending_action,
 	_handle_pending_target,
 )
-from erpnext_ai_tutor.tutor.training_context import _build_training_context
 from erpnext_ai_tutor.tutor.training_runtime import (
 	_pick_stock_entry_type,
+)
+from erpnext_ai_tutor.tutor.training_runtime import (
 	_resolve_training_target as _resolve_training_target_runtime,
 )
 
@@ -45,11 +47,15 @@ def maybe_handle_training_flow(
 	show_save_requested = bool(training_ctx.get("show_save_requested"))
 	manage_roles_requested = bool(training_ctx.get("manage_roles_requested"))
 	dependency_create_requested = bool(training_ctx.get("dependency_create_requested"))
-	explicit_target = training_ctx.get("explicit_target") if isinstance(training_ctx.get("explicit_target"), dict) else {}
+	explicit_target = (
+		training_ctx.get("explicit_target") if isinstance(training_ctx.get("explicit_target"), dict) else {}
+	)
 	explicit_doctype = str(training_ctx.get("explicit_doctype") or "")
 	practical_tutorial_requested = bool(training_ctx.get("practical_tutorial_requested"))
 	requested_stock_type = str(training_ctx.get("requested_stock_type") or "")
-	field_overrides = training_ctx.get("field_overrides") if isinstance(training_ctx.get("field_overrides"), dict) else {}
+	field_overrides = (
+		training_ctx.get("field_overrides") if isinstance(training_ctx.get("field_overrides"), dict) else {}
+	)
 
 	resolve_training_target = partial(
 		_resolve_training_target_runtime,
@@ -71,16 +77,18 @@ def maybe_handle_training_flow(
 		requested_stock_type=requested_stock_type,
 		state_stock_type=state_stock_type,
 	)
+	allow_stateful_guided_flow = bool(pending or (state_action == "create_record" and state_doctype))
 
-	manage_roles_reply = _handle_manage_roles_intent(
-		lang=lang,
-		manage_roles_requested=manage_roles_requested,
-		state_doctype=state_doctype,
-		context_doctype=context_doctype,
-		intent_doctype=intent_doctype,
-	)
-	if manage_roles_reply is not None:
-		return manage_roles_reply
+	if allow_stateful_guided_flow:
+		manage_roles_reply = _handle_manage_roles_intent(
+			lang=lang,
+			manage_roles_requested=manage_roles_requested,
+			state_doctype=state_doctype,
+			context_doctype=context_doctype,
+			intent_doctype=intent_doctype,
+		)
+		if manage_roles_reply is not None:
+			return manage_roles_reply
 
 	if pending == "action":
 		return _handle_pending_action(
@@ -120,7 +128,7 @@ def maybe_handle_training_flow(
 	# New guided sessions should not auto-start from plain chat.
 	# Explain-first responses will later attach an optional guide affordance,
 	# and guided execution will begin only from an explicit guide-start action.
-	if state_action == "create_record" or pending:
+	if allow_stateful_guided_flow:
 		create_or_intent_reply = _handle_create_or_intent(
 			lang=lang,
 			state_doctype=state_doctype,
