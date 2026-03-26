@@ -54,6 +54,19 @@ def _start_tutorial_reply(lang: str, doctype: str) -> str:
 	)
 
 
+def _start_tutorial_reply_with_primary_action(lang: str, doctype: str, primary_action_label: str = "") -> str:
+	reply = _start_tutorial_reply(lang, doctype)
+	label = str(primary_action_label or "").strip()
+	if not label:
+		return reply
+	return _msg(
+		lang,
+		uz=f"{reply} Agar yuqorida asosiy tugma ko'rinib turgan bo'lsa, odatda u \"{label}\" deb turadi.",
+		ru=f'{reply} Если сверху видна основная кнопка действия, обычно она подписана как "{label}".',
+		en=f'{reply} If the main action button is visible at the top, it is usually labeled "{label}".',
+	)
+
+
 def _continue_tutorial_reply(lang: str, doctype: str, stage: str) -> str:
 	if stage == "show_save_only":
 		return _msg(

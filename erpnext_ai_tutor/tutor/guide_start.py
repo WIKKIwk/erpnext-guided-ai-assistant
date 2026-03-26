@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from erpnext_ai_tutor.tutor.training_handlers import _handle_manage_roles_intent
 from erpnext_ai_tutor.tutor.training_state import _build_training_reply, _normalize_menu_path
 from erpnext_ai_tutor.tutor.training_steps import _build_start_step_response
+from erpnext_ai_tutor.tutor.ui import extract_primary_action_label
 
 
 def _normalize_offer(raw_offer: Any) -> Dict[str, Any]:
@@ -43,6 +44,7 @@ def build_explicit_guide_start_reply(
 	offer: Any,
 	*,
 	lang: str,
+	ctx: Dict[str, Any] | None = None,
 ) -> Dict[str, Any] | None:
 	normalized = _normalize_offer(offer)
 	if not normalized:
@@ -52,6 +54,7 @@ def build_explicit_guide_start_reply(
 	target_label = str(normalized.get("target_label") or "").strip()
 	route = str(normalized.get("route") or "").strip()
 	menu_path = _normalize_menu_path(normalized.get("menu_path"), target_label)
+	primary_action_label = extract_primary_action_label(ctx or {})
 
 	if mode == "create_record":
 		return _build_start_step_response(
@@ -59,6 +62,7 @@ def build_explicit_guide_start_reply(
 			doctype=target_label,
 			route=route,
 			menu_path=menu_path,
+			primary_action_label=primary_action_label,
 		)
 
 	if mode == "manage_roles":

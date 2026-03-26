@@ -44,6 +44,22 @@ class GuideStartLogicTests(unittest.TestCase):
 		self.assertEqual(result.get("ok"), True)
 		start_builder.assert_called_once()
 
+	def test_create_record_start_reply_can_be_enriched_with_primary_action_label(self):
+		offer = {
+			"show": True,
+			"target_label": "Item",
+			"route": "/app/item",
+			"menu_path": ["Stock", "Item"],
+			"mode": "create_record",
+		}
+		result = build_explicit_guide_start_reply(
+			offer,
+			lang="uz",
+			ctx={"ui": {"page_actions": {"primary_action": "Yangi Item"}}},
+		)
+		self.assertEqual(result.get("ok"), True)
+		self.assertIn("Yangi Item", str(result.get("reply") or ""))
+
 	def test_returns_none_for_invalid_offer(self):
 		offer = {"show": True, "target_label": "Item", "mode": "create_record"}
 		result = build_explicit_guide_start_reply(offer, lang="uz")

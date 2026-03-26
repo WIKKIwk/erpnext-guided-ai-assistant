@@ -262,7 +262,7 @@ def start_guide_from_offer(offer: Any | None = None, context: Any | None = None)
 		if ui_lang in {"uz", "ru", "en"}:
 			lang = ui_lang
 
-	payload = build_explicit_guide_start_reply(raw_offer, lang=lang)
+	payload = build_explicit_guide_start_reply(raw_offer, lang=lang, ctx=ctx)
 	if not payload:
 		return {
 			"ok": False,

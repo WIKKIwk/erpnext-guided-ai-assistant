@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from erpnext_ai_tutor.tutor.training_replies import (
 	_continue_tutorial_reply,
-	_start_tutorial_reply,
+	_start_tutorial_reply_with_primary_action,
 )
 from erpnext_ai_tutor.tutor.training_state import (
 	_build_guide_payload,
@@ -22,8 +22,9 @@ def _build_start_step_response(
 	stock_entry_type_preference: str = "",
 	allow_dependency_creation: bool = False,
 	field_overrides: Dict[str, Any] | None = None,
+	primary_action_label: str = "",
 ) -> Dict[str, Any]:
-	reply = _start_tutorial_reply(lang, doctype)
+	reply = _start_tutorial_reply_with_primary_action(lang, doctype, primary_action_label)
 	guide = _build_guide_payload(
 		doctype=doctype,
 		route=route,
