@@ -79,16 +79,21 @@ def maybe_handle_training_flow(
 	)
 	allow_stateful_guided_flow = bool(pending or (state_action == "create_record" and state_doctype))
 
-	if allow_stateful_guided_flow:
-		manage_roles_reply = _handle_manage_roles_intent(
-			lang=lang,
-			manage_roles_requested=manage_roles_requested,
-			state_doctype=state_doctype,
-			context_doctype=context_doctype,
-			intent_doctype=intent_doctype,
-		)
-		if manage_roles_reply is not None:
-			return manage_roles_reply
+	# Plain chat must stay on the normal AI explanation path.
+	# Deterministic training replies are reserved for already-running guided flows
+	# until an explicit guide-start entrypoint is introduced.
+	if not allow_stateful_guided_flow:
+		return None
+
+	manage_roles_reply = _handle_manage_roles_intent(
+		lang=lang,
+		manage_roles_requested=manage_roles_requested,
+		state_doctype=state_doctype,
+		context_doctype=context_doctype,
+		intent_doctype=intent_doctype,
+	)
+	if manage_roles_reply is not None:
+		return manage_roles_reply
 
 	if pending == "action":
 		return _handle_pending_action(
@@ -128,16 +133,15 @@ def maybe_handle_training_flow(
 	# New guided sessions should not auto-start from plain chat.
 	# Explain-first responses will later attach an optional guide affordance,
 	# and guided execution will begin only from an explicit guide-start action.
-	if allow_stateful_guided_flow:
-		create_or_intent_reply = _handle_create_or_intent(
-			lang=lang,
-			state_doctype=state_doctype,
-			create_requested=create_requested,
-			resolve_training_target=resolve_training_target,
-			pick_stock_entry_type=pick_stock_entry_type,
-			field_overrides=field_overrides,
-		)
-		if create_or_intent_reply is not None:
-			return create_or_intent_reply
+	create_or_intent_reply = _handle_create_or_intent(
+		lang=lang,
+		state_doctype=state_doctype,
+		create_requested=create_requested,
+		resolve_training_target=resolve_training_target,
+		pick_stock_entry_type=pick_stock_entry_type,
+		field_overrides=field_overrides,
+	)
+	if create_or_intent_reply is not None:
+		return create_or_intent_reply
 
 	return None
