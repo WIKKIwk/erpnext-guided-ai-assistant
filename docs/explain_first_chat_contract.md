@@ -144,6 +144,50 @@ Reason: missing required `route` and `mode`.
 
 Reason: `route` is not normalized.
 
+Affordance semantics:
+
+- Render button:
+  - when `guide_offer.show == true`
+  - and all required fields are valid
+  - and `route` is normalized
+  - and `mode` is allowed
+- No-op:
+  - when `guide_offer == null`
+  - when `guide_offer.show == false`
+  - when required fields are missing
+  - when validation fails
+- Safe degradation:
+  - invalid `guide_offer` must not break reply rendering
+  - invalid `guide_offer` must silently degrade to reply-only behavior
+  - no placeholder, disabled, or speculative guide button should be shown
+
+Frontend rendering policy:
+
+- `reply` is always rendered if present
+- `guide_offer` only controls whether the optional `Ko'rsatib ber` affordance
+  appears
+- `guide_offer` must never create loading state, tutorial state, or background
+  guide execution by itself
+- the button must be absent, not disabled, when the offer is a no-op
+
+Backend offer policy:
+
+- return `guide_offer=null` when the system is not confident enough to offer
+  in-product guidance
+- return `guide_offer=null` when a target cannot be resolved cleanly
+- return `guide_offer=null` when the current turn is explain-only and guide
+  would not materially help
+- do not emit placeholder offers just to keep the UI visually consistent
+
+Decision table:
+
+| Situation | `guide_offer` | Frontend result |
+| --- | --- | --- |
+| Read-only explanation only | `null` | Reply only |
+| Good target + useful guide | Valid object with `show=true` | Reply + button |
+| Explicitly suppressed offer | Object with `show=false` or `null` | Reply only |
+| Broken/invalid offer payload | Invalid object | Reply only |
+
 ### `guide`
 
 Executable guidance payload for deterministic cursor execution.
