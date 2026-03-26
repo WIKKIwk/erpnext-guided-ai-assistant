@@ -32,6 +32,7 @@ from erpnext_ai_tutor.tutor.context import (
 	which_field_reply,
 )
 from erpnext_ai_tutor.tutor.guide_offer import build_guide_offer
+from erpnext_ai_tutor.tutor.guide_start import build_explicit_guide_start_reply
 from erpnext_ai_tutor.tutor.intents import (
 	WHAT_NEXT_RE,
 	WHERE_AM_I_RE,
@@ -244,6 +245,32 @@ def log_tutorial_trace(trace: Any | None = None, level: str = "info") -> Dict[st
 	except Exception:
 		pass
 	return {"ok": True, "trace_id": trace_id}
+
+
+@frappe.whitelist()
+def start_guide_from_offer(offer: Any | None = None, context: Any | None = None) -> Dict[str, Any]:
+	"""Start guided flow only after an explicit frontend affordance click."""
+	raw_offer = parse_json_arg(offer or {})
+	raw_ctx = parse_json_arg(context or {})
+	ctx = sanitize(raw_ctx) if isinstance(raw_ctx, dict) else {}
+
+	cfg = AITutorSettings.get_config()
+	lang = normalize_lang(cfg.language or "uz")
+	ui = ctx.get("ui") if isinstance(ctx, dict) else None
+	if isinstance(ui, dict):
+		ui_lang = normalize_lang(str(ui.get("language") or "").strip())
+		if ui_lang in {"uz", "ru", "en"}:
+			lang = ui_lang
+
+	payload = build_explicit_guide_start_reply(raw_offer, lang=lang)
+	if not payload:
+		return {
+			"ok": False,
+			"reply": reply_text(
+				"next_step_unknown", lang=lang, emoji_style=normalize_emoji_style(cfg.emoji_style)
+			),
+		}
+	return payload
 
 
 def _append_tutorial_log_line(line: str) -> None:
