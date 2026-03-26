@@ -47,6 +47,22 @@ Rules:
 - Does not start cursor flow.
 - Does not create tutorial state.
 - Must be based on intent + context + confidence, not trigger words.
+- Must remain a small, stable UI contract.
+
+Frozen minimal field set:
+
+- Required:
+  - `show`
+  - `target_label`
+  - `route`
+  - `mode`
+- Optional:
+  - `confidence`
+  - `menu_path`
+  - `reason`
+
+The frontend must only rely on the frozen minimal field set above.
+Any future extra fields are extensions and must remain optional.
 
 Allowed shape:
 
@@ -65,14 +81,68 @@ Allowed shape:
 Field rules:
 
 - `show`: boolean, required if `guide_offer` exists.
-- `confidence`: float in `0..1`.
-- `reason`: short diagnostic text for logs/debugging, not required for end-user
-  rendering.
-- `target_label`: human-readable ERP target.
-- `route`: normalized ERP route.
+- `target_label`: non-empty human-readable ERP target, required when
+  `show=true`.
+- `route`: normalized ERP route starting with `/app/`, required when
+  `show=true`.
+- `mode`: normalized guide mode, required when `show=true`.
+- `confidence`: float in `0..1`, optional.
 - `menu_path`: optional resolved path for the UI.
-- `mode`: expected guide mode such as `create_record`, `navigate`, or
-  `manage_roles`.
+- `reason`: optional short diagnostic text for logs/debugging, not required for
+  end-user rendering.
+- `guide_offer=null` is the default when no offer should be shown.
+- `guide_offer.show=false` is allowed but should be treated as equivalent to no
+  visible affordance.
+- If any required field is missing while `show=true`, the offer is invalid and
+  the frontend must not render the button.
+- Allowed `mode` values for the frozen contract:
+  - `create_record`
+  - `navigate`
+  - `manage_roles`
+
+Minimal valid examples:
+
+```json
+{
+  "show": true,
+  "target_label": "Item",
+  "route": "/app/item",
+  "mode": "create_record"
+}
+```
+
+```json
+{
+  "show": true,
+  "target_label": "Sales Invoice",
+  "route": "/app/sales-invoice",
+  "mode": "navigate",
+  "menu_path": ["Selling", "Sales Invoice"],
+  "confidence": 0.79
+}
+```
+
+Invalid examples:
+
+```json
+{
+  "show": true,
+  "target_label": "Item"
+}
+```
+
+Reason: missing required `route` and `mode`.
+
+```json
+{
+  "show": true,
+  "target_label": "Item",
+  "route": "item",
+  "mode": "create_record"
+}
+```
+
+Reason: `route` is not normalized.
 
 ### `guide`
 
