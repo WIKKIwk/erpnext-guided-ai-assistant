@@ -375,15 +375,40 @@ def _log_chat_diagnostic(
 def _log_guide_offer_diagnostic(
 	*, ctx: Dict[str, Any] | None, diagnostic: Dict[str, Any] | None, lang: str
 ) -> None:
+	entry = _build_guide_offer_diag_entry(ctx=ctx, diagnostic=diagnostic, lang=lang)
+	if not entry:
+		return
+	try:
+		line = json.dumps(entry, ensure_ascii=False)
+		_append_guide_offer_diag_log_line(line)
+		try:
+			frappe.logger("erpnext_ai_tutor_guide_offer_diag", allow_site=True, file_count=20).info(line)
+		except Exception:
+			pass
+	except Exception:
+		pass
+
+
+def _build_guide_offer_diag_entry(
+	*, ctx: Dict[str, Any] | None, diagnostic: Dict[str, Any] | None, lang: str
+) -> Dict[str, Any]:
 	try:
 		context = ctx if isinstance(ctx, dict) else {}
 		diag = diagnostic if isinstance(diagnostic, dict) else {}
-		entry = {
+		route = context.get("route")
+		if isinstance(route, list):
+			route_head = str(route[0]).strip() if route else ""
+			route_depth = len([x for x in route if str(x or "").strip()])
+		else:
+			route_head = ""
+			route_depth = 0
+		return {
 			"logged_at": frappe.utils.now(),
 			"user": str(frappe.session.user or "Guest").strip(),
 			"site": str(frappe.local.site or "").strip(),
 			"lang": str(lang or "").strip(),
-			"context_route": str(context.get("route_str") or "").strip()[:180],
+			"context_route_head": route_head,
+			"context_route_depth": route_depth,
 			"decision": str(diag.get("decision") or "").strip(),
 			"action": str(diag.get("action") or "").strip(),
 			"intent_doctype": str(diag.get("intent_doctype") or "").strip(),
@@ -403,14 +428,8 @@ def _log_guide_offer_diagnostic(
 			"state_doctype": str(diag.get("state_doctype") or "").strip(),
 			"state_pending": str(diag.get("state_pending") or "").strip(),
 		}
-		line = json.dumps(entry, ensure_ascii=False)
-		_append_guide_offer_diag_log_line(line)
-		try:
-			frappe.logger("erpnext_ai_tutor_guide_offer_diag", allow_site=True, file_count=20).info(line)
-		except Exception:
-			pass
 	except Exception:
-		pass
+		return {}
 
 
 def _sanitize_demo_token(value: str, *, max_len: int = 16) -> str:

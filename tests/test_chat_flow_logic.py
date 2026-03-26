@@ -60,10 +60,24 @@ if "erpnext_ai_tutor.tutor.llm" not in sys.modules:
 	llm_stub.get_ai_provider_config = _get_ai_provider_config_stub
 	sys.modules["erpnext_ai_tutor.tutor.llm"] = llm_stub
 
-from erpnext_ai_tutor.api import chat  # noqa: E402
+from erpnext_ai_tutor.api import _build_guide_offer_diag_entry, chat  # noqa: E402
 
 
 class ChatFlowLogicTests(unittest.TestCase):
+	def test_guide_offer_diag_entry_does_not_store_raw_route_string(self):
+		entry = _build_guide_offer_diag_entry(
+			ctx={
+				"route": ["Form", "Item", "ITEM-0001"],
+				"route_str": "Form/Item/ITEM-0001",
+			},
+			diagnostic={"decision": "offer_shown", "context_doctype": "Item"},
+			lang="uz",
+		)
+		self.assertEqual(entry.get("context_route_head"), "Form")
+		self.assertEqual(entry.get("context_route_depth"), 3)
+		self.assertNotIn("context_route", entry)
+		self.assertNotIn("route_str", entry)
+
 	def test_item_teaching_request_returns_reply_and_guide_offer_without_starting_guide(self):
 		cfg = SimpleNamespace(
 			enabled=True,
