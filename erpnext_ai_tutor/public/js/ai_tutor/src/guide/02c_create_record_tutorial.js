@@ -80,6 +80,22 @@
 								state: entryStateAfterClick,
 							});
 							if (entryStateAfterClick !== "new_form" && entryStateAfterClick !== "quick_entry") {
+								const blocker = this.getVisibleBlockingDialog();
+								if (blocker) {
+									this.traceTutorialEvent("create_record.blocking_dialog", blocker);
+									return await finish(
+										{
+											ok: false,
+											reached_target: false,
+											message: this.buildBlockingDialogMessage(doctype, blocker),
+										},
+										"create_blocked_dialog",
+										{
+											dialog_title: String(blocker?.title || "").trim(),
+											dialog_primary_label: String(blocker?.primary_label || "").trim(),
+										}
+									);
+								}
 								const openedByFallback = await this.openNewDocFallback(doctype);
 								this.traceTutorialEvent("create_record.entry_state.fallback", {
 									reason: "no_create_state_change",

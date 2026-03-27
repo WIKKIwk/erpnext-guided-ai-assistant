@@ -331,6 +331,57 @@
 				}
 			}
 
+			getVisibleBlockingDialog() {
+				const dialogs = document.querySelectorAll(".modal.show, .msgprint-dialog.modal");
+				for (const dialog of dialogs) {
+					if (!dialog || !isVisible(dialog)) continue;
+					if (dialog.closest(".erpnext-ai-tutor-root")) continue;
+					if (
+						dialog.querySelector(".quick-entry-dialog") ||
+						dialog.querySelector(".quick-entry-layout") ||
+						dialog.classList.contains("quick-entry-dialog")
+					) {
+						continue;
+					}
+					const title = normalizeText(
+						dialog.querySelector(".modal-title, .msgprint h4, .modal-header .title")?.textContent || ""
+					);
+					const body = normalizeText(
+						dialog.querySelector(".msgprint, .modal-body, .modal-message, .frappe-confirm-message")?.textContent || ""
+					);
+					const primaryLabel = normalizeText(
+						dialog.querySelector(".btn-primary:not(.hide), .modal-footer .btn-primary:not(.hide)")?.textContent || ""
+					);
+					const secondaryLabel = normalizeText(
+						dialog.querySelector(".btn-default:not(.hide), .btn-secondary:not(.hide)")?.textContent || ""
+					);
+					if (!title && !body && !primaryLabel && !secondaryLabel) continue;
+					return {
+						title,
+						body,
+						primary_label: primaryLabel,
+						secondary_label: secondaryLabel,
+					};
+				}
+				return null;
+			}
+
+			buildBlockingDialogMessage(doctype, blocker = null) {
+				const dt = String(doctype || "").trim() || "yozuv";
+				const title = String(blocker?.title || "").trim();
+				const body = String(blocker?.body || "").trim();
+				const primaryLabel = String(blocker?.primary_label || "").trim();
+				const parts = [`**${dt}** yaratish oqimini ekraningizdagi dialog ushlab turibdi.`];
+				if (title) parts.push(`Dialog sarlavhasi: ${title}.`);
+				if (body) parts.push(`Xabar: ${body}.`);
+				if (primaryLabel) {
+					parts.push(`Avval dialogdagi \`${primaryLabel}\` yoki mos amaliyotni yakunlang, keyin yana urinaman.`);
+				} else {
+					parts.push("Avval dialogni yakunlang yoki yoping, keyin yana urinaman.");
+				}
+				return parts.join(" ");
+			}
+
 			getQuickEntryDialog() {
 				const selectors = [
 					".modal.show .quick-entry-dialog",
