@@ -1261,6 +1261,25 @@
 				return false;
 			}
 
+			isOnDoctypeList(doctype) {
+				const slug = this.doctypeToRouteSlug(doctype);
+				if (!slug) return false;
+				const path = this.normalizePath(window.location.pathname || "");
+				if (path === `/app/${slug}`) return true;
+				if (path.startsWith(`/app/${slug}/view/`)) return true;
+				try {
+					const route = Array.isArray(frappe?.get_route?.()) ? frappe.get_route() : [];
+					if (!route.length) return false;
+					const head = String(route[0] || "").trim().toLowerCase();
+					const second = String(route[1] || "").trim().toLowerCase();
+					if (head === "list" && second === String(doctype || "").trim().toLowerCase()) return true;
+					if (head === slug && (!second || second === "view" || second === "list")) return true;
+				} catch {
+					// ignore
+				}
+				return false;
+			}
+
 			getCreateRecordEntryState(doctype) {
 				if (this.isQuickEntryOpen()) return "quick_entry";
 				if (this.isOnDoctypeNewForm(doctype)) return "new_form";
@@ -1291,6 +1310,70 @@
 				if (el.getAttribute?.("aria-haspopup") === "true" && !/\b(add|new|create)\b/i.test(labelNorm)) {
 					return true;
 				}
+				return false;
+			}
+
+			getCurrentListView(doctype) {
+				const dt = String(doctype || "").trim();
+				if (!dt || !this.isOnDoctypeList(dt)) return null;
+				const currentList = window.cur_list;
+				if (currentList && String(currentList.doctype || "").trim().toLowerCase() === dt.toLowerCase()) {
+					return currentList;
+				}
+				try {
+					if (typeof frappe?.get_list_view === "function") {
+						const listView = frappe.get_list_view(dt);
+						if (listView && String(listView.doctype || "").trim().toLowerCase() === dt.toLowerCase()) {
+							return listView;
+						}
+					}
+				} catch {
+					// ignore
+				}
+				return null;
+			}
+
+			async openNewDocFromCurrentListView(doctype) {
+				const dt = String(doctype || "").trim();
+				const listView = this.getCurrentListView(dt);
+				if (!dt || !listView) return false;
+
+				const pagePrimary =
+					listView?.page?.btn_primary?.get?.(0) ||
+					listView?.page?.btn_primary?.[0] ||
+					null;
+				const primaryLabel = this.getElementLabel(pagePrimary);
+				const createRe = /\b(add|new|create|yangi|qo['’]?sh|добав|созд)\b/i;
+				if (
+					pagePrimary &&
+					isVisible(pagePrimary) &&
+					!this.isForbiddenActionElement(pagePrimary) &&
+					!this.isNonCreatePrimaryAction(pagePrimary, primaryLabel) &&
+					createRe.test(primaryLabel)
+				) {
+					this.emitProgress(`🔁 DOM qidiruv qoqildi, **${dt}** uchun page primary action orqali davom etaman.`);
+					const clicked = await this.focusElement(pagePrimary, 'List view ichidagi "Add/New" primary actionni bosamiz.', {
+						click: true,
+						duration_ms: 260,
+						pre_click_pause_ms: 90,
+					});
+					if (clicked) {
+						const state = await this.waitForCreateRecordEntryState(dt, 5200);
+						if (state === "new_form" || state === "quick_entry") return true;
+					}
+				}
+
+				if (typeof listView.make_new_doc === "function") {
+					try {
+						this.emitProgress(`🔁 DOM qidiruv qoqildi, **${dt}** uchun list view create actionini to'g'ridan-to'g'ri ishga tushiraman.`);
+						listView.make_new_doc();
+						const state = await this.waitForCreateRecordEntryState(dt, 5200);
+						return state === "new_form" || state === "quick_entry";
+					} catch {
+						// ignore
+					}
+				}
+
 				return false;
 			}
 
@@ -1386,6 +1469,8 @@
 			async openNewDocFallback(doctype) {
 				const dt = String(doctype || "").trim();
 				if (!dt || typeof frappe?.new_doc !== "function") return false;
+				const nativeOpened = await this.openNewDocFromCurrentListView(dt);
+				if (nativeOpened) return true;
 				try {
 					this.emitProgress(`🔁 UI tugmani topolmadim, fallback orqali **${dt}** uchun yangi forma ochyapman.`);
 					frappe.new_doc(dt);
