@@ -1301,8 +1301,15 @@
 			getDoctypeFormState(doctype) {
 				const dtNorm = String(doctype || "").trim().toLowerCase();
 				if (!dtNorm) return "not_form";
+				const routeName = this.getCurrentFormRouteName(doctype);
 				const frm = window.cur_frm;
 				if (frm && String(frm.doctype || "").trim().toLowerCase() === dtNorm) {
+					const wrapper = frm.wrapper?.get?.(0) || frm.wrapper?.[0] || null;
+					const wrapperVisible = Boolean(wrapper && isVisible(wrapper));
+					const routeLooksLikeForm = Boolean(routeName);
+					if (!wrapperVisible && !routeLooksLikeForm) {
+						return "not_form";
+					}
 					try {
 						if (typeof frm.is_new === "function") {
 							return frm.is_new() ? "new_form" : "existing_form";
@@ -1313,7 +1320,6 @@
 					if (frm.doc && frm.doc.__islocal) return "new_form";
 					if (frm.doc && String(frm.doc.name || "").trim()) return "existing_form";
 				}
-				const routeName = this.getCurrentFormRouteName(doctype);
 				if (!routeName) return "not_form";
 				return this.isNewDocRouteName(doctype, routeName) ? "new_form" : "existing_form";
 			}
