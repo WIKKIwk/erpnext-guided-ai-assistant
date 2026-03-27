@@ -681,15 +681,34 @@
 						.toLowerCase();
 				}
 
+				getLinkDropdownClickableTarget(node) {
+					if (!node) return null;
+					const direct = node.matches?.(
+						"[role='option'], .link-option, .ui-menu-item-wrapper, a, button"
+					)
+						? node
+						: null;
+					if (direct && isVisible(direct)) return direct;
+					const nested = node.querySelector?.(
+						"[role='option'], .link-option, .ui-menu-item-wrapper, a, button"
+					);
+					if (nested && isVisible(nested)) return nested;
+					return node;
+				}
+
 				getVisibleLinkDropdownOptions(input, fieldname = "") {
 					const root = this.getTutorialFieldSearchRoot();
 					const out = [];
 					const inputRect = input?.getBoundingClientRect?.() || null;
 					const seen = new Set();
-					const push = (el) => {
+					const push = (node) => {
+						const el = this.getLinkDropdownClickableTarget(node);
 						if (!el || !isVisible(el)) return;
 						if (seen.has(el)) return;
-						const label = String(el.textContent || "").replace(/\s+/g, " ").trim();
+						const labelSource = node?.matches?.("li") ? node : el;
+						const label = String(labelSource?.textContent || el.textContent || "")
+							.replace(/\s+/g, " ")
+							.trim();
 						if (!label) return;
 						seen.add(el);
 						out.push({ el, label });
@@ -704,14 +723,21 @@
 
 					const selectors = [
 						".awesomplete ul li",
+						".awesomplete ul [role='option']",
 						".awesomplete li",
+						".awesomplete li [role='option']",
 						".ui-front li",
+						".ui-front .ui-menu-item-wrapper",
 						".ui-autocomplete li",
+						".ui-autocomplete .ui-menu-item-wrapper",
 					];
 					for (const sel of selectors) {
 						const nodes = root.querySelectorAll(sel);
 						for (const node of nodes) {
-							const option = node.matches?.("li") ? node : node.closest?.("li");
+							const option =
+								node.matches?.("li, [role='option'], .ui-menu-item-wrapper")
+									? node
+									: node.closest?.("li, [role='option'], .ui-menu-item-wrapper");
 							if (!option || !isVisible(option)) continue;
 							if (inputRect) {
 								const rect = option.getBoundingClientRect();
@@ -743,6 +769,12 @@
 
 				async pickVisibleLinkOption(fieldname, label, input, desiredValue) {
 					if (!input) return false;
+					try {
+						input.focus?.();
+						input.dispatchEvent(new Event("input", { bubbles: true }));
+					} catch {
+						// ignore
+					}
 					const option = await this.waitFor(
 						() => this.findMatchingVisibleLinkOption(input, desiredValue, fieldname),
 						2200,
@@ -761,7 +793,14 @@
 					);
 					if (!clicked) return false;
 					await this.sleep(180);
-					return true;
+					const wanted = this.normalizeOptionText(desiredValue || optionLabel);
+					const confirmed = await this.waitFor(() => {
+						const inputValue = this.normalizeOptionText(input.value || "");
+						const docValue = this.normalizeOptionText(this.readFieldValue(fieldname) || "");
+						if (!wanted) return Boolean(inputValue || docValue);
+						return inputValue === wanted || docValue === wanted;
+					}, 2400, 100);
+					return Boolean(confirmed);
 				}
 
 				getFormFieldSamplePlans(doctype, stage = "open_and_fill_basic") {
@@ -977,13 +1016,17 @@
 						});
 						if (!focused) continue;
 
-						const ok = await this.typeIntoInput(input, valueToType);
+						const fieldtype = String(df?.fieldtype || "").trim();
+						const ok =
+							fieldtype === "Link"
+								? true
+								: await this.typeIntoInput(input, valueToType);
 						let optionPicked = false;
-						if (String(df?.fieldtype || "").trim() === "Link" && ok) {
+						if (fieldtype === "Link" && ok) {
 							optionPicked = await this.pickVisibleLinkOption(fieldname, label, input, valueToType);
 						}
 						await this.sleep(120);
-						const reallyFilled = ok
+						const reallyFilled = (fieldtype === "Link" ? optionPicked : ok)
 							? await this.verifyVisibleFieldConfirmation(fieldname, df, label, valueToType)
 							: false;
 						if (reallyFilled) {
@@ -1048,13 +1091,17 @@
 								failedRequired.add(fieldname);
 								continue;
 							}
-							const ok = await this.typeIntoInput(input, valueToType);
+							const fieldtype = String(df?.fieldtype || "").trim();
+							const ok =
+								fieldtype === "Link"
+									? true
+									: await this.typeIntoInput(input, valueToType);
 							let optionPicked = false;
-							if (String(df?.fieldtype || "").trim() === "Link" && ok) {
+							if (fieldtype === "Link" && ok) {
 								optionPicked = await this.pickVisibleLinkOption(fieldname, label, input, valueToType);
 							}
 							await this.sleep(120);
-							const reallyFilled = ok
+							const reallyFilled = (fieldtype === "Link" ? optionPicked : ok)
 								? await this.verifyVisibleFieldConfirmation(fieldname, df, label, valueToType)
 								: false;
 								if (reallyFilled) {
