@@ -113,10 +113,24 @@
 			}
 		}
 
-		getTutorStateForRequest() {
+		shouldSendTutorStateWithMessage(text = "") {
+			const conv = this.getActiveConversation();
+			const state = conv?.tutor_state;
+			if (!state || typeof state !== "object") return false;
+			const pending = String(state.pending || "").trim().toLowerCase();
+			if (pending) return true;
+			const raw = String(text || "").trim().toLowerCase();
+			if (!raw) return false;
+			return /(?:^|\b)(davom|continue|keyingi|next|yana|save|submit|saqla|ha\b|xo'p|xop|ok\b|okay\b|show\s+save)(?:\b|$)/i.test(
+				raw
+			);
+		}
+
+		getTutorStateForRequest(text = "") {
 			const conv = this.getActiveConversation();
 			const state = conv?.tutor_state;
 			if (!state || typeof state !== "object") return null;
+			if (!this.shouldSendTutorStateWithMessage(text)) return null;
 			return sanitize(state);
 		}
 

@@ -1296,10 +1296,24 @@
 			}
 		}
 
-		getTutorStateForRequest() {
+		shouldSendTutorStateWithMessage(text = "") {
+			const conv = this.getActiveConversation();
+			const state = conv?.tutor_state;
+			if (!state || typeof state !== "object") return false;
+			const pending = String(state.pending || "").trim().toLowerCase();
+			if (pending) return true;
+			const raw = String(text || "").trim().toLowerCase();
+			if (!raw) return false;
+			return /(?:^|\b)(davom|continue|keyingi|next|yana|save|submit|saqla|ha\b|xo'p|xop|ok\b|okay\b|show\s+save)(?:\b|$)/i.test(
+				raw
+			);
+		}
+
+		getTutorStateForRequest(text = "") {
 			const conv = this.getActiveConversation();
 			const state = conv?.tutor_state;
 			if (!state || typeof state !== "object") return null;
+			if (!this.shouldSendTutorStateWithMessage(text)) return null;
 			return sanitize(state);
 		}
 
@@ -2758,7 +2772,7 @@
 			try {
 				const ctx = getContextSnapshot(this.config, advanced ? this.lastEvent : null);
 				if (advanced && this.activeField) ctx.active_field = sanitize(this.activeField);
-				const tutorState = this.getTutorStateForRequest();
+				const tutorState = this.getTutorStateForRequest(text);
 				if (tutorState) ctx.tutor_state = tutorState;
 				const history = advanced ? this.getScopedHistory(routeKey, 20) : this.getCoreHistory(6);
 				// Remove the message we just appended (current user message) to avoid duplication.

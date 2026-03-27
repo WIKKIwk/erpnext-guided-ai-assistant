@@ -411,7 +411,7 @@
 			try {
 				const ctx = getContextSnapshot(this.config, advanced ? this.lastEvent : null);
 				if (advanced && this.activeField) ctx.active_field = sanitize(this.activeField);
-				const tutorState = this.getTutorStateForRequest();
+				const tutorState = this.getTutorStateForRequest(text);
 				if (tutorState) ctx.tutor_state = tutorState;
 				const history = advanced ? this.getScopedHistory(routeKey, 20) : this.getCoreHistory(6);
 				// Remove the message we just appended (current user message) to avoid duplication.
