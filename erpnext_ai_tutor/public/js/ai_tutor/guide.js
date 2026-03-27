@@ -2411,9 +2411,9 @@
 				return { plan: [], source: "fallback" };
 			}
 
-			async typeIntoInput(input, value, opts = {}) {
-				if (!input || value === undefined || value === null) return false;
-				const text = String(value);
+				async typeIntoInput(input, value, opts = {}) {
+					if (!input || value === undefined || value === null) return false;
+					const text = String(value);
 				const charDelay = Math.max(14, Number(opts?.char_delay_ms || 46));
 				const initialPause = Math.max(0, Number(opts?.initial_pause_ms || 0));
 				const afterTypePause = Math.max(0, Number(opts?.after_type_pause_ms || 0));
@@ -2449,6 +2449,86 @@
 					return false;
 				}
 			}
+
+				normalizeOptionText(value = "") {
+					return String(value || "")
+						.replace(/\s+/g, " ")
+						.trim()
+						.toLowerCase();
+				}
+
+				getVisibleLinkDropdownOptions(input) {
+					const root = this.getTutorialFieldSearchRoot();
+					const out = [];
+					const inputRect = input?.getBoundingClientRect?.() || null;
+					const push = (el) => {
+						if (!el || !isVisible(el)) return;
+						const label = String(el.textContent || "").replace(/\s+/g, " ").trim();
+						if (!label) return;
+						out.push({ el, label });
+					};
+
+					const selectors = [
+						".awesomplete ul li",
+						".awesomplete li",
+						".ui-front li",
+						".ui-autocomplete li",
+					];
+					for (const sel of selectors) {
+						const nodes = root.querySelectorAll(sel);
+						for (const node of nodes) {
+							const option = node.matches?.("li") ? node : node.closest?.("li");
+							if (!option || !isVisible(option)) continue;
+							if (inputRect) {
+								const rect = option.getBoundingClientRect();
+								if (Math.abs(rect.top - inputRect.bottom) > 420 && rect.bottom < inputRect.top) continue;
+							}
+							push(option);
+						}
+					}
+					return out;
+				}
+
+				findMatchingVisibleLinkOption(input, desiredValue = "") {
+					const options = this.getVisibleLinkDropdownOptions(input);
+					if (!options.length) return null;
+					const wanted = this.normalizeOptionText(desiredValue);
+					if (!wanted) return options[0]?.el || null;
+
+					for (const option of options) {
+						if (this.normalizeOptionText(option.label) === wanted) return option.el;
+					}
+					for (const option of options) {
+						if (this.normalizeOptionText(option.label).includes(wanted)) return option.el;
+					}
+					for (const option of options) {
+						if (wanted.includes(this.normalizeOptionText(option.label))) return option.el;
+					}
+					return options[0]?.el || null;
+				}
+
+				async pickVisibleLinkOption(fieldname, label, input, desiredValue) {
+					if (!input) return false;
+					const option = await this.waitFor(
+						() => this.findMatchingVisibleLinkOption(input, desiredValue),
+						2200,
+						100
+					);
+					if (!option) return false;
+					const optionLabel = String(option.textContent || "").replace(/\s+/g, " ").trim();
+					const clicked = await this.focusElement(
+						option,
+						`**${label || fieldname}** uchun ochilgan ro'yxatdan \`${optionLabel || desiredValue}\` variantini tanlaymiz.`,
+						{
+							click: true,
+							duration_ms: 260,
+							pre_click_pause_ms: 90,
+						}
+					);
+					if (!clicked) return false;
+					await this.sleep(180);
+					return true;
+				}
 
 				getFormFieldSamplePlans(doctype, stage = "open_and_fill_basic") {
 					const dt = String(doctype || "").trim();
@@ -2664,6 +2744,10 @@
 						if (!focused) continue;
 
 						const ok = await this.typeIntoInput(input, valueToType);
+						let optionPicked = false;
+						if (String(df?.fieldtype || "").trim() === "Link" && ok) {
+							optionPicked = await this.pickVisibleLinkOption(fieldname, label, input, valueToType);
+						}
 						await this.sleep(120);
 						const reallyFilled = ok
 							? await this.verifyVisibleFieldConfirmation(fieldname, df, label, valueToType)
@@ -2674,7 +2758,9 @@
 								filledLabels.push(label);
 							}
 							this.emitProgress(
-								`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi, sababi: ${reason}.`
+								`✅ **${label}** maydoni \`${String(valueToType || "").trim()}\` bilan to'ldirildi${
+									optionPicked ? " va ro'yxatdan bosib tanlandi" : ""
+								}, sababi: ${reason}.`
 							);
 						} else {
 							this.emitProgress(`⚠️ **${label}** qiymati UI orqali tasdiqlanmadi, keyingi maydonga o'tdim.`);
@@ -2729,6 +2815,10 @@
 								continue;
 							}
 							const ok = await this.typeIntoInput(input, valueToType);
+							let optionPicked = false;
+							if (String(df?.fieldtype || "").trim() === "Link" && ok) {
+								optionPicked = await this.pickVisibleLinkOption(fieldname, label, input, valueToType);
+							}
 							await this.sleep(120);
 							const reallyFilled = ok
 								? await this.verifyVisibleFieldConfirmation(fieldname, df, label, valueToType)
@@ -2739,7 +2829,9 @@
 										filledLabels.push(label);
 									}
 									roundProgress = true;
-									this.emitProgress(`✅ Majburiy **${label}** maydoni to'ldirildi.`);
+									this.emitProgress(
+										`✅ Majburiy **${label}** maydoni to'ldirildi${optionPicked ? " va ro'yxatdan tanlandi" : ""}.`
+									);
 								} else {
 									failedRequired.add(fieldname);
 								}
