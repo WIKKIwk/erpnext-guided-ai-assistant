@@ -105,12 +105,27 @@
 				return this.getCreateRecordEntryState(doctype);
 			}
 
+			isNonCreatePrimaryAction(el, label = "") {
+				if (!el) return false;
+				const labelNorm = normalizeText(label);
+				if (!labelNorm) return false;
+				if (el.closest(".actions-btn-group, .menu-btn-group")) return true;
+				if (/(^|\b)(actions|menu|more)(\b|$)/i.test(labelNorm)) return true;
+				if (el.getAttribute?.("aria-haspopup") === "true" && !/\b(add|new|create)\b/i.test(labelNorm)) {
+					return true;
+				}
+				return false;
+			}
+
 			findCreateActionButton(doctype = "") {
 				const createRe = /\b(add|new|create|yangi|qo['’]?sh|добав|созд)\b/i;
 				const doctypeNorm = normalizeText(doctype);
 				const roots = [
 					document.querySelector(".page-head .page-actions"),
+					document.querySelector(".layout-main .page-head .page-actions"),
 					document.querySelector(".layout-main .page-actions"),
+					document.querySelector(".layout-main .msg-box"),
+					document.querySelector(".layout-main .list-empty-state"),
 					document.querySelector(".layout-main-section"),
 					document.querySelector(".page-container"),
 					document.body,
@@ -129,9 +144,15 @@
 						const label = this.getElementLabel(el);
 						if (!label) continue;
 						const labelNorm = normalizeText(label);
+						if (this.isNonCreatePrimaryAction(el, labelNorm)) continue;
 						let score = 0;
+						if (el.matches?.(".btn-new-doc")) score += 220;
+						if (el.matches?.(".primary-action")) score += 180;
+						if (el.closest?.(".standard-actions")) score += 45;
+						if (el.closest?.(".page-actions")) score += 20;
 						if (createRe.test(label)) score += 120;
-						if (el.matches?.(".primary-action, .btn-primary")) score += 35;
+						if (el.matches?.("[data-label]")) score += 15;
+						if (el.matches?.(".btn-primary")) score += 15;
 						if (/\+\s*[a-z]/i.test(label) || /^\+\s*/.test(label)) score += 20;
 						if (/item|invoice|order|customer|supplier/i.test(label)) score += 10;
 						if (doctypeNorm && labelNorm.includes(doctypeNorm)) score += 45;
@@ -141,7 +162,7 @@
 						}
 					}
 				}
-				if (best && bestScore >= 35) return best;
+				if (best && bestScore >= 80) return best;
 				return null;
 			}
 
