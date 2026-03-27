@@ -185,6 +185,18 @@
 					return null;
 				}
 
+				getFieldControlObject(fieldname) {
+					const key = String(fieldname || "").trim();
+					if (!key) return null;
+					const quickEntryController = this.getQuickEntryController?.() || null;
+					const quickEntryField = quickEntryController?.dialog?.fields_dict?.[key];
+					if (quickEntryField) return quickEntryField;
+					const frm = window.cur_frm;
+					const direct = frm?.fields_dict?.[key];
+					if (direct) return direct;
+					return null;
+				}
+
 				async ensureFieldTabVisible(fieldname, label = "") {
 					const key = String(fieldname || "").trim();
 					if (!key) return false;
@@ -425,6 +437,11 @@
 					return candidate;
 				}
 
+				isInteractiveTutorialField(df) {
+					const fieldtype = String(df?.fieldtype || "").trim();
+					return fieldtype === "Link" || fieldtype === "Select";
+				}
+
 					buildMergedFieldPlans(doctype, stage, plannedRows = [], fallbackPlans = []) {
 						const merged = [];
 						const seen = new Set();
@@ -488,7 +505,14 @@
 					}
 						for (const row of Array.isArray(plannedRows) ? plannedRows : []) append(row, "ai");
 						for (const row of Array.isArray(fallbackPlans) ? fallbackPlans : []) append(row, "fallback");
-
+						merged.sort((a, b) => {
+							const aMeta = this.getFieldMeta(a.fieldname);
+							const bMeta = this.getFieldMeta(b.fieldname);
+							const aInteractive = this.isInteractiveTutorialField(aMeta);
+							const bInteractive = this.isInteractiveTutorialField(bMeta);
+							if (aInteractive !== bInteractive) return aInteractive ? 1 : -1;
+							return 0;
+						});
 						return merged.slice(0, this.getTutorialPlanLimit(stage));
 					}
 
@@ -657,16 +681,26 @@
 						.toLowerCase();
 				}
 
-				getVisibleLinkDropdownOptions(input) {
+				getVisibleLinkDropdownOptions(input, fieldname = "") {
 					const root = this.getTutorialFieldSearchRoot();
 					const out = [];
 					const inputRect = input?.getBoundingClientRect?.() || null;
+					const seen = new Set();
 					const push = (el) => {
 						if (!el || !isVisible(el)) return;
+						if (seen.has(el)) return;
 						const label = String(el.textContent || "").replace(/\s+/g, " ").trim();
 						if (!label) return;
+						seen.add(el);
 						out.push({ el, label });
 					};
+
+					const control = this.getFieldControlObject(fieldname);
+					const awesompleteList = control?.awesomplete?.ul || null;
+					if (awesompleteList && isVisible(awesompleteList)) {
+						const items = awesompleteList.querySelectorAll("li");
+						for (const item of items) push(item);
+					}
 
 					const selectors = [
 						".awesomplete ul li",
@@ -689,8 +723,8 @@
 					return out;
 				}
 
-				findMatchingVisibleLinkOption(input, desiredValue = "") {
-					const options = this.getVisibleLinkDropdownOptions(input);
+				findMatchingVisibleLinkOption(input, desiredValue = "", fieldname = "") {
+					const options = this.getVisibleLinkDropdownOptions(input, fieldname);
 					if (!options.length) return null;
 					const wanted = this.normalizeOptionText(desiredValue);
 					if (!wanted) return options[0]?.el || null;
@@ -710,7 +744,7 @@
 				async pickVisibleLinkOption(fieldname, label, input, desiredValue) {
 					if (!input) return false;
 					const option = await this.waitFor(
-						() => this.findMatchingVisibleLinkOption(input, desiredValue),
+						() => this.findMatchingVisibleLinkOption(input, desiredValue, fieldname),
 						2200,
 						100
 					);
