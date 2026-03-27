@@ -1241,11 +1241,50 @@
 			} catch {
 				// ignore
 			}
-			return false;
-		}
+				return false;
+			}
 
-			findCreateActionButton() {
+			isOnDoctypeForm(doctype) {
+				const slug = this.doctypeToRouteSlug(doctype);
+				if (!slug) return false;
+				const path = this.normalizePath(window.location.pathname || "");
+				if (path.startsWith(`/app/${slug}/`) && !path.startsWith(`/app/${slug}/new-`)) return true;
+				try {
+					const route = Array.isArray(frappe?.get_route?.()) ? frappe.get_route() : [];
+					if (!route.length) return false;
+					const head = String(route[0] || "").trim().toLowerCase();
+					const second = String(route[1] || "").trim().toLowerCase();
+					if (head === "form" && second === String(doctype || "").trim().toLowerCase()) return true;
+				} catch {
+					// ignore
+				}
+				return false;
+			}
+
+			getCreateRecordEntryState(doctype) {
+				if (this.isQuickEntryOpen()) return "quick_entry";
+				if (this.isOnDoctypeNewForm(doctype)) return "new_form";
+				if (this.isOnDoctypeForm(doctype)) return "existing_form";
+				return "other";
+			}
+
+			hasReachedCreateRecordEntryState(doctype) {
+				const state = this.getCreateRecordEntryState(doctype);
+				return state === "new_form" || state === "quick_entry";
+			}
+
+			async waitForCreateRecordEntryState(doctype, timeoutMs = 5200) {
+				const reachedState = await this.waitFor(() => {
+					const state = this.getCreateRecordEntryState(doctype);
+					return state === "new_form" || state === "quick_entry" ? state : false;
+				}, timeoutMs, 120);
+				if (reachedState === "new_form" || reachedState === "quick_entry") return reachedState;
+				return this.getCreateRecordEntryState(doctype);
+			}
+
+			findCreateActionButton(doctype = "") {
 				const createRe = /\b(add|new|create|yangi|qo['’]?sh|добав|созд)\b/i;
+				const doctypeNorm = normalizeText(doctype);
 				const roots = [
 					document.querySelector(".page-head .page-actions"),
 					document.querySelector(".layout-main .page-actions"),
@@ -1266,11 +1305,13 @@
 						if (this.isForbiddenActionElement(el)) continue;
 						const label = this.getElementLabel(el);
 						if (!label) continue;
+						const labelNorm = normalizeText(label);
 						let score = 0;
 						if (createRe.test(label)) score += 120;
 						if (el.matches?.(".primary-action, .btn-primary")) score += 35;
 						if (/\+\s*[a-z]/i.test(label) || /^\+\s*/.test(label)) score += 20;
 						if (/item|invoice|order|customer|supplier/i.test(label)) score += 10;
+						if (doctypeNorm && labelNorm.includes(doctypeNorm)) score += 45;
 						if (score > bestScore) {
 							best = el;
 							bestScore = score;
@@ -1327,8 +1368,8 @@
 				try {
 					this.emitProgress(`🔁 UI tugmani topolmadim, fallback orqali **${dt}** uchun yangi forma ochyapman.`);
 					frappe.new_doc(dt);
-					await this.waitFor(() => this.isOnDoctypeNewForm(dt) || this.isQuickEntryOpen(), 5200, 120);
-					return this.isOnDoctypeNewForm(dt) || this.isQuickEntryOpen();
+					const state = await this.waitForCreateRecordEntryState(dt, 5200);
+					return state === "new_form" || state === "quick_entry";
 				} catch {
 					return false;
 				}
@@ -1380,8 +1421,6 @@
 				if (domLabel?.textContent) return String(domLabel.textContent).replace(/\s+/g, " ").trim();
 				return key;
 			}
-
-
 				parseFieldOptions(rawOptions) {
 					if (Array.isArray(rawOptions)) {
 						return rawOptions.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 20);
@@ -1491,12 +1530,12 @@
 				const metaFields = Array.isArray(frm.meta?.fields) ? frm.meta.fields : [];
 				for (const df of metaFields) {
 					if (!df || !df.fieldname) continue;
-					const fieldname = String(df.fieldname || "").trim();
-					if (!fieldname) continue;
-					if (!this.isFieldAllowedForTutorialStage(doctype, stage, fieldname)) continue;
-					const fieldtype = String(df.fieldtype || "Data").trim() || "Data";
-					if (
-						[
+						const fieldname = String(df.fieldname || "").trim();
+						if (!fieldname) continue;
+						if (!this.isFieldAllowedForTutorialStage(doctype, stage, fieldname)) continue;
+						const fieldtype = String(df.fieldtype || "Data").trim() || "Data";
+						if (
+							[
 							"Section Break",
 							"Column Break",
 							"Tab Break",
@@ -2806,6 +2845,10 @@
 					};
 
 				if (!this.isOnDoctypeNewForm(doctype)) {
+						const entryStateBeforeCreate = this.getCreateRecordEntryState(doctype);
+						this.traceTutorialEvent("create_record.entry_state.before", {
+							state: entryStateBeforeCreate,
+						});
 						if (guide.route && !this.isAtRoute(guide.route)) {
 							const openedList = await this.navigate(guide.route);
 							if (!openedList) {
@@ -2815,9 +2858,14 @@
 								);
 							}
 						}
-					const createBtn = await this.waitFor(() => this.findCreateActionButton(), 3200, 120);
+					const createBtn = await this.waitFor(() => this.findCreateActionButton(doctype), 3200, 120);
 						if (!createBtn) {
 							const openedByFallback = await this.openNewDocFallback(doctype);
+							this.traceTutorialEvent("create_record.entry_state.fallback", {
+								reason: "create_button_missing",
+								ok: Boolean(openedByFallback),
+								state: this.getCreateRecordEntryState(doctype),
+							});
 							if (!openedByFallback) {
 								return await finish(
 									{ ok: false, message: 'Yangi yozuv ochish tugmasini topa olmadim ("Add/New/Create").' },
@@ -2832,6 +2880,11 @@
 						});
 							if (!clicked) {
 								const openedByFallback = await this.openNewDocFallback(doctype);
+								this.traceTutorialEvent("create_record.entry_state.fallback", {
+									reason: "create_button_click_failed",
+									ok: Boolean(openedByFallback),
+									state: this.getCreateRecordEntryState(doctype),
+								});
 								if (!openedByFallback) {
 									return await finish(
 										{ ok: false, message: "Yangi yozuv tugmasini xavfsiz bosib bo'lmadi." },
@@ -2840,7 +2893,27 @@
 								}
 							} else {
 							this.emitProgress("➕ `Add/New` bosildi, endi forma turini tekshiryapman.");
-							await this.waitFor(() => this.isOnDoctypeNewForm(doctype) || this.isQuickEntryOpen(), 5200, 120);
+							const entryStateAfterClick = await this.waitForCreateRecordEntryState(doctype, 5200);
+							this.traceTutorialEvent("create_record.entry_state.after_click", {
+								state: entryStateAfterClick,
+							});
+							if (entryStateAfterClick !== "new_form" && entryStateAfterClick !== "quick_entry") {
+								const openedByFallback = await this.openNewDocFallback(doctype);
+								this.traceTutorialEvent("create_record.entry_state.fallback", {
+									reason: "no_create_state_change",
+									ok: Boolean(openedByFallback),
+									state: this.getCreateRecordEntryState(doctype),
+								});
+								if (!openedByFallback) {
+									return await finish(
+										{
+											ok: false,
+											message: 'Yangi yozuv oqimi boshlanmadi: `Add/New` bosilgandan keyin forma ochilmadi.',
+										},
+										"create_state_not_reached"
+									);
+								}
+							}
 						}
 					}
 				}
@@ -3416,27 +3489,10 @@
 				input.dispatchEvent(new KeyboardEvent("keypress", eventInit));
 				input.dispatchEvent(new KeyboardEvent("keyup", eventInit));
 				return true;
-				} catch {
-					return false;
-				}
+			} catch {
+				return false;
 			}
-
-			isOnDoctypeForm(doctype) {
-				const slug = this.doctypeToRouteSlug(doctype);
-				if (!slug) return false;
-				const path = this.normalizePath(window.location.pathname || "");
-				if (path.startsWith(`/app/${slug}/`) && !path.startsWith(`/app/${slug}/new-`)) return true;
-				try {
-					const route = Array.isArray(frappe?.get_route?.()) ? frappe.get_route() : [];
-					if (!route.length) return false;
-					const head = String(route[0] || "").trim().toLowerCase();
-					const second = String(route[1] || "").trim().toLowerCase();
-					if (head === "form" && second === String(doctype || "").trim().toLowerCase()) return true;
-				} catch {
-					// ignore
-					}
-					return false;
-				}
+		}
 
 		async trySearchFallback(step, guide) {
 			if (!this.running || !guide?.route) return false;
@@ -3723,7 +3779,7 @@
 					already_there: false,
 					message: "",
 				};
-				}
+			}
 				this.stop();
 				this.setRunOptions(runOptions);
 				this._progressStepNo = 0;

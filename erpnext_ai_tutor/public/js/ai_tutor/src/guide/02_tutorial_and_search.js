@@ -84,8 +84,30 @@
 				return false;
 			}
 
-			findCreateActionButton() {
+			getCreateRecordEntryState(doctype) {
+				if (this.isQuickEntryOpen()) return "quick_entry";
+				if (this.isOnDoctypeNewForm(doctype)) return "new_form";
+				if (this.isOnDoctypeForm(doctype)) return "existing_form";
+				return "other";
+			}
+
+			hasReachedCreateRecordEntryState(doctype) {
+				const state = this.getCreateRecordEntryState(doctype);
+				return state === "new_form" || state === "quick_entry";
+			}
+
+			async waitForCreateRecordEntryState(doctype, timeoutMs = 5200) {
+				const reachedState = await this.waitFor(() => {
+					const state = this.getCreateRecordEntryState(doctype);
+					return state === "new_form" || state === "quick_entry" ? state : false;
+				}, timeoutMs, 120);
+				if (reachedState === "new_form" || reachedState === "quick_entry") return reachedState;
+				return this.getCreateRecordEntryState(doctype);
+			}
+
+			findCreateActionButton(doctype = "") {
 				const createRe = /\b(add|new|create|yangi|qo['’]?sh|добав|созд)\b/i;
+				const doctypeNorm = normalizeText(doctype);
 				const roots = [
 					document.querySelector(".page-head .page-actions"),
 					document.querySelector(".layout-main .page-actions"),
@@ -106,11 +128,13 @@
 						if (this.isForbiddenActionElement(el)) continue;
 						const label = this.getElementLabel(el);
 						if (!label) continue;
+						const labelNorm = normalizeText(label);
 						let score = 0;
 						if (createRe.test(label)) score += 120;
 						if (el.matches?.(".primary-action, .btn-primary")) score += 35;
 						if (/\+\s*[a-z]/i.test(label) || /^\+\s*/.test(label)) score += 20;
 						if (/item|invoice|order|customer|supplier/i.test(label)) score += 10;
+						if (doctypeNorm && labelNorm.includes(doctypeNorm)) score += 45;
 						if (score > bestScore) {
 							best = el;
 							bestScore = score;
@@ -167,8 +191,8 @@
 				try {
 					this.emitProgress(`🔁 UI tugmani topolmadim, fallback orqali **${dt}** uchun yangi forma ochyapman.`);
 					frappe.new_doc(dt);
-					await this.waitFor(() => this.isOnDoctypeNewForm(dt) || this.isQuickEntryOpen(), 5200, 120);
-					return this.isOnDoctypeNewForm(dt) || this.isQuickEntryOpen();
+					const state = await this.waitForCreateRecordEntryState(dt, 5200);
+					return state === "new_form" || state === "quick_entry";
 				} catch {
 					return false;
 				}
@@ -220,4 +244,3 @@
 				if (domLabel?.textContent) return String(domLabel.textContent).replace(/\s+/g, " ").trim();
 				return key;
 			}
-

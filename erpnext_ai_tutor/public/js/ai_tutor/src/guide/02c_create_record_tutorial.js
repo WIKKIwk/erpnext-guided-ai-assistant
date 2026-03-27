@@ -27,6 +27,10 @@
 					};
 
 				if (!this.isOnDoctypeNewForm(doctype)) {
+						const entryStateBeforeCreate = this.getCreateRecordEntryState(doctype);
+						this.traceTutorialEvent("create_record.entry_state.before", {
+							state: entryStateBeforeCreate,
+						});
 						if (guide.route && !this.isAtRoute(guide.route)) {
 							const openedList = await this.navigate(guide.route);
 							if (!openedList) {
@@ -36,9 +40,14 @@
 								);
 							}
 						}
-					const createBtn = await this.waitFor(() => this.findCreateActionButton(), 3200, 120);
+					const createBtn = await this.waitFor(() => this.findCreateActionButton(doctype), 3200, 120);
 						if (!createBtn) {
 							const openedByFallback = await this.openNewDocFallback(doctype);
+							this.traceTutorialEvent("create_record.entry_state.fallback", {
+								reason: "create_button_missing",
+								ok: Boolean(openedByFallback),
+								state: this.getCreateRecordEntryState(doctype),
+							});
 							if (!openedByFallback) {
 								return await finish(
 									{ ok: false, message: 'Yangi yozuv ochish tugmasini topa olmadim ("Add/New/Create").' },
@@ -53,6 +62,11 @@
 						});
 							if (!clicked) {
 								const openedByFallback = await this.openNewDocFallback(doctype);
+								this.traceTutorialEvent("create_record.entry_state.fallback", {
+									reason: "create_button_click_failed",
+									ok: Boolean(openedByFallback),
+									state: this.getCreateRecordEntryState(doctype),
+								});
 								if (!openedByFallback) {
 									return await finish(
 										{ ok: false, message: "Yangi yozuv tugmasini xavfsiz bosib bo'lmadi." },
@@ -61,7 +75,27 @@
 								}
 							} else {
 							this.emitProgress("➕ `Add/New` bosildi, endi forma turini tekshiryapman.");
-							await this.waitFor(() => this.isOnDoctypeNewForm(doctype) || this.isQuickEntryOpen(), 5200, 120);
+							const entryStateAfterClick = await this.waitForCreateRecordEntryState(doctype, 5200);
+							this.traceTutorialEvent("create_record.entry_state.after_click", {
+								state: entryStateAfterClick,
+							});
+							if (entryStateAfterClick !== "new_form" && entryStateAfterClick !== "quick_entry") {
+								const openedByFallback = await this.openNewDocFallback(doctype);
+								this.traceTutorialEvent("create_record.entry_state.fallback", {
+									reason: "no_create_state_change",
+									ok: Boolean(openedByFallback),
+									state: this.getCreateRecordEntryState(doctype),
+								});
+								if (!openedByFallback) {
+									return await finish(
+										{
+											ok: false,
+											message: 'Yangi yozuv oqimi boshlanmadi: `Add/New` bosilgandan keyin forma ochilmadi.',
+										},
+										"create_state_not_reached"
+									);
+								}
+							}
 						}
 					}
 				}
