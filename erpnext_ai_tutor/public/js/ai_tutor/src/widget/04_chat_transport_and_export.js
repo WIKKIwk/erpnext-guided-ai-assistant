@@ -81,6 +81,7 @@
 					guide: null,
 					guide_offer: guideOffer,
 					guide_completed: guideCompleted,
+					defer_guide_actions: true,
 				});
 
 			const conv = this.getActiveConversation();

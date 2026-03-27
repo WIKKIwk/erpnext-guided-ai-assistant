@@ -367,7 +367,8 @@
 			const finalGuideCompleted = initialGuideCompleted || bubbleShowsCurrentTarget;
 			if (finalGuideCompleted) wrap.dataset.guideCompleted = "1";
 
-			if (role === "assistant" && guide && this.isGuidedCursorEnabled() && !finalGuideCompleted) {
+			const deferGuideActions = Boolean(opts?.defer_guide_actions);
+			if (!deferGuideActions && role === "assistant" && guide && this.isGuidedCursorEnabled() && !finalGuideCompleted) {
 				const actions = document.createElement("div");
 				actions.className = "erpnext-ai-tutor-message-actions";
 				const guideBtn = document.createElement("button");
@@ -384,6 +385,7 @@
 				actions.appendChild(guideBtn);
 				bubble.appendChild(actions);
 			} else if (
+				!deferGuideActions &&
 				role === "assistant" &&
 				guideOffer?.show &&
 				this.isGuidedCursorEnabled() &&
