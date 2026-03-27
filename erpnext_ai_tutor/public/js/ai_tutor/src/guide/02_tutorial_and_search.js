@@ -343,8 +343,13 @@
 					const allowHidden = Boolean(opts?.allowHidden);
 				const selectors = [
 					`.frappe-control[data-fieldname='${key}'] input:not([type='hidden'])`,
+					`.frappe-control[data-fieldname='${key}'] .control-input input:not([type='hidden'])`,
+					`.frappe-control[data-fieldname='${key}'] .control-input .link-field input:not([type='hidden'])`,
+					`.frappe-control[data-fieldname='${key}'] .control-input .awesomplete input:not([type='hidden'])`,
+					`.frappe-control[data-fieldname='${key}'] .control-input-wrapper input:not([type='hidden'])`,
 					`.frappe-control[data-fieldname='${key}'] textarea`,
 					`.frappe-control[data-fieldname='${key}'] select`,
+					`.frappe-control[data-fieldname='${key}'] .checkbox input[type='checkbox']`,
 					`.control-input-wrapper [data-fieldname='${key}'] input:not([type='hidden'])`,
 				];
 				for (const sel of selectors) {

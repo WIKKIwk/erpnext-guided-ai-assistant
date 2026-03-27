@@ -529,6 +529,10 @@
 						const preferred = fieldname === "stock_entry_type" ? this.getStockEntryTypePreferredOrder() : [];
 						return this.pickPreferredSelectOption(options, preferred) || wanted || "Demo";
 					}
+					if (fieldtype === "Check") {
+						const wanted = String(rawValue || "").trim().toLowerCase();
+						return ["", "0", "false", "no", "off"].includes(wanted) ? "0" : "1";
+					}
 					if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) {
 						const wanted = String(rawValue || "").trim();
 						return wanted && /^-?\d+(\.\d+)?$/.test(wanted) ? wanted : "1";
@@ -591,6 +595,13 @@
 				const afterTypePause = Math.max(0, Number(opts?.after_type_pause_ms || 0));
 				try {
 					input.focus();
+					if (String(input.type || "").trim().toLowerCase() === "checkbox") {
+						const shouldCheck = !["", "0", "false", "no", "off"].includes(text.trim().toLowerCase());
+						input.checked = shouldCheck;
+						input.dispatchEvent(new Event("input", { bubbles: true }));
+						input.dispatchEvent(new Event("change", { bubbles: true }));
+						return true;
+					}
 					if (input.tagName === "SELECT") {
 						input.value = text;
 						input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1018,6 +1029,11 @@
 						const inputText = String(input.value ?? "").trim();
 						const wantedText = String(expectedValue ?? "").trim();
 						if (this.isEmailField(df) && !this.isValidEmailValue(docText)) return false;
+						if (fieldtype === "Check") {
+							const expectedChecked = !["", "0", "false", "no", "off"].includes(wantedText.toLowerCase());
+							const actualChecked = !["", "0", "false", "no", "off"].includes(docText.toLowerCase());
+							return Boolean(input.checked) === expectedChecked && actualChecked === expectedChecked;
+						}
 						if (["Int", "Float", "Currency", "Percent"].includes(fieldtype)) {
 							if (!/^-?\d+(\.\d+)?$/.test(docText)) return false;
 						}
